@@ -4,7 +4,7 @@ __pycache__/
 *.pyd
 *.log
 .dist/
-dist/*.tar.gz
+dist/
 .pytest_cache/
 .env
 .DS_Store

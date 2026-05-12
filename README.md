@@ -46,7 +46,24 @@ Don't reinvent the sync engine. The app orchestrates, validates, persists state,
 ## Important decision
 Bidirectional sync (`bisync`) is supported, but the baseline must be initialized explicitly from the UI or with `--resync`. It is never enabled silently.
 
-## Quickstart
+## Install
+
+### Option 1 — `.deb` (Debian/Ubuntu)
+
+Download the latest `drive-sync-desktop_<version>_all.deb` from the [releases page](https://github.com/diegolis/drive-sync/releases) and install:
+
+```bash
+sudo apt install ./drive-sync-desktop_*.deb
+```
+
+apt will pull `python3-webview`, `python3-pil`, GTK/WebKit bindings, and `rclone` from the official repos. If your apt rclone is older than 1.66, run the included helper once (no root needed):
+
+```bash
+drive-sync-desktop-update-rclone
+```
+
+### Option 2 — shell installer (any Linux with systemd)
+
 ```bash
 cd app
 chmod +x install.sh
@@ -55,6 +72,12 @@ drive-sync-desktop
 ```
 
 `install.sh` will download a recent `rclone` to `~/.local/bin/rclone` if your system rclone is too old for `bisync --resilient`. It never touches the system rclone.
+
+### Option 3 — `pip` (developers)
+
+```bash
+pip install --user .[tray]
+```
 
 ## Contributing
 See [CONTRIBUTING.md](./CONTRIBUTING.md). Bug reports and feature requests are tracked in [Issues](https://github.com/diegolis/drive-sync/issues).

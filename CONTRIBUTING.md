@@ -24,10 +24,18 @@ python3 -m pytest
 Tests do not touch real rclone or the filesystem outside of `tmp_path`/monkeypatch. If you add anything that uses `subprocess`, mock it.
 
 ## Packaging
+
+Tarball (vendor-neutral):
 ```bash
 cd app
 ./make-package.sh   # produces dist/drive-sync-desktop-<version>.tar.gz
 ```
+
+Debian package:
+```bash
+scripts/build-deb.sh   # produces dist/drive-sync-desktop_<version>_all.deb
+```
+The `.deb` depends on `python3-webview` and other apt-packaged runtime deps. Inspect what you built with `dpkg-deb -c` and `dpkg-deb -I`.
 
 ## PR style
 - Small, focused changes.
