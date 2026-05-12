@@ -71,8 +71,22 @@ def test_save_preserves_excludes_and_flags(bridge):
     assert "*.tmp" in job["excludes"]
 
 
-def test_save_always_forces_dry_run_required(bridge):
-    job_id = bridge.save_job(_payload("force-dry", dry_run_required=False))
+def test_save_respects_dry_run_required_flag(bridge):
+    enabled = bridge.save_job(_payload("dry-on", dry_run_required=True, local_path="/tmp/a"))
+    disabled = bridge.save_job(_payload("dry-off", dry_run_required=False, local_path="/tmp/b"))
+    assert bridge.get_job(enabled)["dry_run_required"] == 1
+    assert bridge.get_job(disabled)["dry_run_required"] == 0
+
+
+def test_save_defaults_dry_run_required_to_true(bridge):
+    # When the payload doesn't include the key, the safer default kicks in.
+    job_id = bridge.save_job({
+        "name": "default-dry",
+        "local_path": "/tmp/test/A",
+        "remote_name": "drive",
+        "remote_path": "X",
+        "mode": "copy",
+    })
     assert bridge.get_job(job_id)["dry_run_required"] == 1
 
 
@@ -225,7 +239,7 @@ def test_agent_enable_calls_and_returns_status(monkeypatch, bridge):
 
 def test_save_blocks_duplicate_target(bridge):
     bridge.save_job(_payload("first"))
-    with pytest.raises(ValueError, match="otra sync"):
+    with pytest.raises(ValueError, match="Another sync"):
         bridge.save_job(_payload("second"))
 
 

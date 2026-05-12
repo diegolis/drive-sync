@@ -41,7 +41,7 @@ def test_job_lock_blocks_concurrent_acquire():
             with agent.job_lock(99):
                 raised = False
         except RuntimeError as exc:
-            raised = "ya está corriendo" in str(exc)
+            raised = "already running" in str(exc)
         assert raised
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import sys
 from typing import Any, Callable
 
 from . import service_control
@@ -8,6 +9,10 @@ from .agent import run_one
 from .common import ensure_dirs
 from .onboarding import add_drive_remote, list_shared_drives, set_shared_drive
 from .rclone_backend import list_remote_folders, list_remotes, list_remotes_detailed, make_remote_folder
+
+
+def _log_swallowed(where: str, exc: BaseException) -> None:
+    print(f"[bridge:{where}] {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
 from .storage import (
     delete_job,
     find_duplicate_target,
@@ -46,19 +51,22 @@ class Bridge:
     def list_remotes(self) -> list[str]:
         try:
             return list_remotes()
-        except Exception:
+        except Exception as exc:
+            _log_swallowed("list_remotes", exc)
             return []
 
     def list_remotes_detailed(self) -> list[dict[str, Any]]:
         try:
             return list_remotes_detailed()
-        except Exception:
+        except Exception as exc:
+            _log_swallowed("list_remotes_detailed", exc)
             return []
 
     def list_remote_folders(self, remote_name: str, path: str = "") -> list[str]:
         try:
             return list_remote_folders(remote_name, path)
-        except Exception:
+        except Exception as exc:
+            _log_swallowed("list_remote_folders", exc)
             return []
 
     def make_remote_folder(self, remote_name: str, path: str) -> None:
@@ -81,7 +89,7 @@ class Bridge:
         if job and job["mode"] == "bisync" and not dry_run and not resync and not has_baseline_run(int(job_id)):
             return {
                 "ok": False,
-                "summary": "Este sync bidireccional necesita inicializar el baseline. Tocá 'Inicializar bisync'.",
+                "summary": "This bidirectional sync needs a baseline. Click 'Initialize bisync'.",
                 "needs_resync": True,
             }
         ok, summary = run_one(int(job_id), dry_run=bool(dry_run), resync=bool(resync))
@@ -128,7 +136,7 @@ def _normalize_payload(p: dict[str, Any]) -> dict[str, Any]:
         "mode": p.get("mode") or "copy",
         "interval_minutes": int(p.get("interval_minutes") or 15),
         "auto_sync": bool(p.get("auto_sync")),
-        "dry_run_required": True,
+        "dry_run_required": bool(p.get("dry_run_required", True)),
         "excludes": p.get("excludes") or "",
     }
 
@@ -142,7 +150,8 @@ def _default_name(local: str) -> str:
 def _generate_remote_name() -> str:
     try:
         existing = set(list_remotes())
-    except Exception:
+    except Exception as exc:
+        _log_swallowed("generate_remote_name.list_remotes", exc)
         existing = set()
     if "gdrive" not in existing:
         return "gdrive"
@@ -155,16 +164,17 @@ def _generate_remote_name() -> str:
 def _validate_payload(payload: dict[str, Any]) -> dict[str, Any]:
     missing = [k for k in ("name", "local_path", "remote_name") if not payload.get(k)]
     if missing:
-        raise ValueError(f"Faltan campos: {', '.join(missing)}")
+        raise ValueError(f"Missing fields: {', '.join(missing)}")
     if payload["mode"] not in {"copy", "sync", "bisync"}:
-        raise ValueError("Modo inválido")
+        raise ValueError("Invalid mode")
     return payload
 
 
 def _safe_list_shared(name: str) -> list[dict[str, str]]:
     try:
         return list_shared_drives(name)
-    except Exception:
+    except Exception as exc:
+        _log_swallowed("list_shared_drives", exc)
         return []
 
 
@@ -177,6 +187,6 @@ def _ensure_unique_target(payload: dict[str, Any]) -> None:
     )
     if duplicate is not None:
         raise ValueError(
-            "Ya existe otra sync sobre la misma carpeta local y destino en Drive. "
-            "Eliminala primero o cambiá una de las dos rutas."
+            "Another sync already targets the same local folder and Drive destination. "
+            "Delete it first or change one of the paths."
         )

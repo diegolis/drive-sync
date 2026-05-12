@@ -43,6 +43,10 @@ def db_path() -> pathlib.Path:
 def ensure_dirs() -> None:
     for path in [config_dir(), data_dir(), log_dir(), runtime_dir()]:
         path.mkdir(parents=True, exist_ok=True)
+        try:
+            path.chmod(0o700)
+        except OSError:
+            pass
 
 
 @dataclass(slots=True)

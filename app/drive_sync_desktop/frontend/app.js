@@ -2,8 +2,8 @@
 
 const MODE_LABEL = {
   copy: "Backup",
-  sync: "Espejo",
-  bisync: "Sincronizar",
+  sync: "Mirror",
+  bisync: "Sync",
 };
 const MODE_ARROW = { copy: "↑", sync: "⇒", bisync: "⇄" };
 const POLL_INTERVAL_MS = 10000;
@@ -117,7 +117,9 @@ async function pollTick() {
   try {
     await refreshJobs();
     await refreshAgent();
-  } catch (_) {}
+  } catch (err) {
+    console.error("pollTick failed:", err);
+  }
 }
 
 function anyModalOpen() {
@@ -151,7 +153,7 @@ function populateRemoteSelect() {
 function renderOverflowRemotes() {
   if (!els.overflowRemotes) return;
   if (state.remotesDetailed.length === 0) {
-    els.overflowRemotes.textContent = "Sin cuentas conectadas";
+    els.overflowRemotes.textContent = "No accounts connected";
   } else {
     els.overflowRemotes.innerHTML = state.remotesDetailed
       .map((r) => `<div>${escapeHtml(r.label)} <span class="muted">(${escapeHtml(r.name)})</span></div>`)
@@ -189,7 +191,7 @@ function renderJobCard(job) {
   $(".job-status", node).textContent = jobStatusText(job);
   const syncBtn = $(".action-sync", node);
   if (job.needs_baseline) {
-    syncBtn.textContent = "Inicializar";
+    syncBtn.textContent = "Initialize";
     syncBtn.addEventListener("click", () => runJob(job, false, true));
   } else {
     syncBtn.addEventListener("click", () => runJob(job, false, false));
@@ -214,21 +216,21 @@ function jobStatusClass(job) {
 }
 
 function jobStatusText(job) {
-  if (job._running) return "Corriendo…";
-  if (job.needs_baseline) return "Falta inicializar baseline";
-  if (!job.last_status) return "Sin corridas todavía";
+  if (job._running) return "Running…";
+  if (job.needs_baseline) return "Needs baseline";
+  if (!job.last_status) return "No runs yet";
   const verb = job.last_status === "ok" ? "OK" : "Error";
   return `${verb} · ${formatTime(job.last_run_at)}`;
 }
 
 function formatTime(ts) {
-  if (!ts) return "nunca";
+  if (!ts) return "never";
   const d = new Date(ts.replace(" ", "T") + "Z");
   if (isNaN(d.getTime())) return ts;
   const diff = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (diff < 60) return "hace un momento";
-  if (diff < 3600) return `hace ${Math.floor(diff / 60)} min`;
-  if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} h ago`;
   return d.toLocaleDateString();
 }
 
@@ -238,11 +240,11 @@ function escapeHtml(s) {
 
 function openJobModal(job = null) {
   if (state.remotes.length === 0) {
-    showToast("Conectá una cuenta de Drive primero", "info");
+    showToast("Connect a Drive account first", "info");
     startConnectDrive();
     return;
   }
-  $("#job-modal-title").textContent = job ? `Editar ${job.name}` : "Nueva sincronización";
+  $("#job-modal-title").textContent = job ? `Edit ${job.name}` : "New sync";
   els.jobForm.reset();
   els.jobForm.dataset.id = job ? job.id : "";
   els.jobForm.elements.mode.value = "copy";
@@ -254,6 +256,9 @@ function openJobModal(job = null) {
     Array.from(els.jobForm.elements.mode).forEach((r) => (r.checked = r.value === job.mode));
     els.jobForm.elements.interval_minutes.value = job.interval_minutes;
     els.jobForm.elements.auto_sync.checked = !!job.auto_sync;
+    if (els.jobForm.elements.dry_run_required) {
+      els.jobForm.elements.dry_run_required.checked = job.dry_run_required !== 0;
+    }
     els.jobForm.elements.excludes.value = job.excludes || "";
   }
   els.jobModal.showModal();
@@ -271,7 +276,7 @@ function autoSuggestFromLocal(local) {
 async function openFolderPicker() {
   const remoteName = els.jobForm.elements.remote_name.value;
   if (!remoteName) {
-    showToast("Elegí una cuenta primero", "warn");
+    showToast("Pick an account first", "warn");
     return;
   }
   const detailed = state.remotesDetailed.find((r) => r.name === remoteName);
@@ -284,7 +289,7 @@ async function openFolderPicker() {
 
 async function loadPickerPath() {
   renderPickerBreadcrumbs();
-  els.folderPickerList.innerHTML = '<div class="muted">Cargando…</div>';
+  els.folderPickerList.innerHTML = '<div class="muted">Loading…</div>';
   try {
     const folders = await api().list_remote_folders(state.picker.remoteName, state.picker.path);
     renderFolderList(folders);
@@ -305,7 +310,7 @@ function renderPickerBreadcrumbs() {
 
 function renderFolderList(folders) {
   if (folders.length === 0) {
-    els.folderPickerList.innerHTML = '<div class="muted">(sin subcarpetas)</div>';
+    els.folderPickerList.innerHTML = '<div class="muted">(no subfolders)</div>';
     return;
   }
   els.folderPickerList.innerHTML = folders
@@ -336,7 +341,7 @@ function confirmFolderPicker() {
 }
 
 async function newFolderInPicker() {
-  const name = prompt("Nombre de la carpeta nueva:");
+  const name = prompt("Name for the new folder:");
   if (!name || !name.trim()) return;
   const clean = name.trim();
   const target = state.picker.path ? `${state.picker.path}/${clean}` : clean;
@@ -344,7 +349,7 @@ async function newFolderInPicker() {
     await api().make_remote_folder(state.picker.remoteName, target);
     state.picker.path = target;
     await loadPickerPath();
-    showToast(`Carpeta "${clean}" creada`, "ok");
+    showToast(`Folder "${clean}" created`, "ok");
   } catch (err) {
     showToast(toMessage(err), "error");
   }
@@ -368,7 +373,7 @@ async function handleSaveJob(e) {
   try {
     const newId = await api().save_job(data);
     els.jobModal.close();
-    showToast(data.id ? "Cambios guardados" : "Sincronización creada", "ok");
+    showToast(data.id ? "Changes saved" : "Sync created", "ok");
     await refreshJobs();
     await autoInitIfNeeded(newId, data);
   } catch (err) {
@@ -381,11 +386,12 @@ async function autoInitIfNeeded(jobId, data) {
   await refreshJobs();
   const job = state.jobs.find((j) => j.id === jobId);
   if (!job || !job.needs_baseline) return;
-  showToast("Inicializando sincronización bidireccional…", "info");
+  showToast("Initializing bidirectional sync…", "info");
   await runJob(job, false, true, { auto: true });
 }
 
 function formToJobPayload(form) {
+  const dryReq = form.elements.dry_run_required;
   return {
     id: form.dataset.id ? Number(form.dataset.id) : null,
     name: form.elements.name.value,
@@ -395,6 +401,7 @@ function formToJobPayload(form) {
     mode: form.elements.mode.value,
     interval_minutes: Number(form.elements.interval_minutes.value || 15),
     auto_sync: form.elements.auto_sync.checked,
+    dry_run_required: dryReq ? dryReq.checked : true,
     excludes: form.elements.excludes.value,
   };
 }
@@ -402,10 +409,10 @@ function formToJobPayload(form) {
 async function runJob(job, dryRun, resync, opts = {}) {
   const auto = !!opts.auto;
   if (!auto && !dryRun && !resync && job.mode === "sync") {
-    if (!confirm(`"${job.name}" está en modo Espejo y puede borrar archivos en Drive. ¿Continuar?`)) return;
+    if (!confirm(`"${job.name}" is in Mirror mode and may delete files on Drive. Continue?`)) return;
   }
   setJobRunning(job.id, true);
-  const label = dryRun ? "Dry run en progreso…" : resync ? "Inicializando…" : "Sincronizando…";
+  const label = dryRun ? "Dry run in progress…" : resync ? "Initializing…" : "Syncing…";
   showToast(label, "info");
   try {
     const result = await api().run(job.id, dryRun, resync);
@@ -417,7 +424,7 @@ async function runJob(job, dryRun, resync, opts = {}) {
     if (result.needs_resync && auto) {
       showToast(result.summary, "warn");
     } else {
-      const okLabel = dryRun ? "Dry run OK" : resync ? "Inicializado" : "Sync OK";
+      const okLabel = dryRun ? "Dry run OK" : resync ? "Initialized" : "Sync OK";
       const text = result.ok ? okLabel : `Error: ${truncate(result.summary, 200)}`;
       showToast(text, result.ok ? "ok" : "error");
     }
@@ -437,7 +444,7 @@ function setJobRunning(jobId, running) {
   const status = card.querySelector(".job-status");
   if (running) {
     status.className = "job-status running";
-    status.textContent = "Corriendo…";
+    status.textContent = "Running…";
   }
 }
 
@@ -454,7 +461,7 @@ async function openDetailModal(job) {
 async function renderRuns(jobId) {
   const runs = await api().list_runs(jobId);
   if (runs.length === 0) {
-    els.detailRunsList.innerHTML = '<p class="muted" style="padding:8px 0">Sin corridas todavía.</p>';
+    els.detailRunsList.innerHTML = '<p class="muted" style="padding:8px 0">No runs yet.</p>';
     return;
   }
   els.detailRunsList.innerHTML = runs.map((r) => `
@@ -473,11 +480,11 @@ function renderConfig(job) {
   const remote = state.remotesDetailed.find((r) => r.name === job.remote_name);
   const accountLabel = remote ? `${remote.label} (${remote.name})` : job.remote_name;
   const rows = [
-    ["Carpeta local", job.local_path],
-    ["Cuenta", accountLabel],
-    ["Destino", job.remote_path],
-    ["Tipo", MODE_LABEL[job.mode]],
-    ["Automático", job.auto_sync ? `cada ${job.interval_minutes} min` : "no"],
+    ["Local folder", job.local_path],
+    ["Account", accountLabel],
+    ["Destination", job.remote_path],
+    ["Mode", MODE_LABEL[job.mode]],
+    ["Auto", job.auto_sync ? `every ${job.interval_minutes} min` : "no"],
     ["Excludes", job.excludes ? job.excludes.split("\n").join(", ") : "—"],
   ];
   els.detailConfigList.innerHTML = rows
@@ -502,10 +509,10 @@ async function editFromDetail() {
 async function deleteFromDetail() {
   const job = currentDetailJob();
   if (!job) return;
-  if (!confirm(`¿Eliminar "${job.name}"? Esto no toca tus archivos.`)) return;
+  if (!confirm(`Delete "${job.name}"? Your files are not touched.`)) return;
   await api().delete_job(job.id);
   els.detailModal.close();
-  showToast("Eliminado", "ok");
+  showToast("Deleted", "ok");
   await refreshJobs();
 }
 
@@ -515,10 +522,10 @@ function currentDetailJob() {
 }
 
 async function startConnectDrive() {
-  showToast("Abriendo navegador para autorizar…", "info");
+  showToast("Opening browser to authorize…", "info");
   try {
     const result = await api().connect_drive();
-    showToast(`Cuenta conectada: ${result.name}`, "ok");
+    showToast(`Account connected: ${result.name}`, "ok");
     await refreshAll();
     if (result && Array.isArray(result.shared_drives) && result.shared_drives.length > 0) {
       openSharedDriveModal(result.name, result.shared_drives);
@@ -540,12 +547,12 @@ function openSharedDriveModal(remoteName, drives) {
     const driveId = choice ? choice.value : "";
     els.sharedModal.close();
     if (!driveId) {
-      showToast("Apuntando a Mi Drive", "ok");
+      showToast("Pointing to My Drive", "ok");
       return;
     }
     try {
       await api().select_shared_drive(remoteName, driveId);
-      showToast("Shared Drive vinculado", "ok");
+      showToast("Shared Drive linked", "ok");
       await refreshRemotes();
     } catch (err) {
       showToast(toMessage(err), "error");
@@ -573,8 +580,8 @@ function renderAgentPill() {
   }
   els.agentPill.hidden = false;
   els.agentPill.className = "pill agent-pill " + (active ? "on" : "muted");
-  els.agentPill.textContent = active ? "Agente activo" : "Agente apagado";
-  els.agentPill.title = active ? "Click para desactivar" : "Click para activar";
+  els.agentPill.textContent = active ? "Agent on" : "Agent off";
+  els.agentPill.title = active ? "Click to disable" : "Click to enable";
 }
 
 function renderAgentWarning() {
@@ -584,35 +591,35 @@ function renderAgentWarning() {
     els.agentWarning.classList.add("hidden");
     return;
   }
-  const noun = autoJobs.length === 1 ? "sincronización automática" : "sincronizaciones automáticas";
-  els.agentWarningDetail.textContent = `Tenés ${autoJobs.length} ${noun} pero no se van a disparar.`;
+  const noun = autoJobs.length === 1 ? "automatic sync" : "automatic syncs";
+  els.agentWarningDetail.textContent = `You have ${autoJobs.length} ${noun} but they won't run.`;
   els.agentWarning.classList.remove("hidden");
 }
 
 function renderOverflowAgentToggle() {
   if (!els.overflowAgentToggle) return;
   if (!state.agent.available) {
-    els.overflowAgentToggle.textContent = "Agente no disponible";
+    els.overflowAgentToggle.textContent = "Agent unavailable";
     els.overflowAgentToggle.disabled = true;
     return;
   }
   els.overflowAgentToggle.disabled = false;
-  els.overflowAgentToggle.textContent = state.agent.active ? "Desactivar agente" : "Activar agente";
+  els.overflowAgentToggle.textContent = state.agent.active ? "Disable agent" : "Enable agent";
 }
 
 async function toggleAgent(forceEnable = false) {
   if (!state.agent.available) {
-    showToast("El servicio del agente no está disponible", "warn");
+    showToast("Agent service unavailable", "warn");
     return;
   }
   const turnOn = forceEnable || !state.agent.active;
-  showToast(turnOn ? "Activando agente…" : "Desactivando agente…", "info");
+  showToast(turnOn ? "Enabling agent…" : "Disabling agent…", "info");
   try {
     state.agent = turnOn ? await api().agent_enable() : await api().agent_disable();
     renderAgentPill();
     renderAgentWarning();
     renderOverflowAgentToggle();
-    showToast(turnOn ? "Agente activo" : "Agente apagado", "ok");
+    showToast(turnOn ? "Agent on" : "Agent off", "ok");
   } catch (err) {
     showToast(toMessage(err), "error");
   }
@@ -627,7 +634,7 @@ function showToast(msg, kind = "info") {
 }
 
 function toMessage(err) {
-  if (!err) return "Error desconocido";
+  if (!err) return "Unknown error";
   if (typeof err === "string") return err;
   return err.message || err.toString();
 }

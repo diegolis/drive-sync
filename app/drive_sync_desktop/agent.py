@@ -32,7 +32,7 @@ def job_lock(job_id: int):
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise RuntimeError("Ese job ya está corriendo")
+            raise RuntimeError("That job is already running")
         yield
 
 
@@ -49,7 +49,7 @@ def _due(job: dict) -> bool:
 def run_one(job_id: int, dry_run: bool = False, resync: bool = False) -> tuple[bool, str]:
     job = get_job(job_id)
     if not job:
-        return False, "Job inexistente"
+        return False, "Job does not exist"
     return _execute(job, dry_run, resync)
 
 
@@ -72,7 +72,7 @@ def _persist(job_id: int, run_type: str, command: str, result: CommandResult) ->
 
 def loop(interval_seconds: int = 30) -> None:
     init_db()
-    print("[drive-sync-agent] iniciado")
+    print("[drive-sync-agent] started")
     while True:
         _tick()
         time.sleep(interval_seconds)
@@ -97,12 +97,12 @@ def _needs_baseline(job: dict) -> bool:
 
 def _skip_reason(job: dict) -> str | None:
     if _needs_baseline(job):
-        return "bisync sin baseline"
+        return "bisync has no baseline"
     block = latest_block_reason(int(job["id"]))
     if block == "empty_local":
-        return "una carpeta está vacía con archivos en la otra (acción manual)"
+        return "one side is empty while the other has files (needs manual action)"
     if block == "needs_baseline":
-        return "bisync requiere reinicializar baseline"
+        return "bisync needs to reinitialize the baseline"
     return None
 
 
@@ -113,7 +113,7 @@ def _try_auto_recovery(job: dict) -> bool:
         return False
     if not _can_auto_recover(job):
         return False
-    print(f"[{job['name']}] auto-recover: re-inicializando baseline")
+    print(f"[{job['name']}] auto-recover: reinitializing baseline")
     mark_auto_resync(int(job["id"]))
     try:
         run_one(int(job["id"]), dry_run=False, resync=True)
@@ -148,9 +148,9 @@ def _safe_run(job: dict) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--once", type=int, help="Corre un job por id")
+    parser.add_argument("--once", type=int, help="Run a single job by id")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--resync", action="store_true", help="Inicializa baseline de bisync")
+    parser.add_argument("--resync", action="store_true", help="Initialize bisync baseline")
     parser.add_argument("--loop", action="store_true")
     parser.add_argument("--interval-seconds", type=int, default=30)
     return parser

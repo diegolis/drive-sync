@@ -39,13 +39,13 @@ def build_add_remote_command(
 
 def _validate_name(name: str) -> None:
     if not name or not re.fullmatch(r"[A-Za-z0-9_-]+", name):
-        raise ValueError("Nombre de remote inválido (solo letras, números, guion y guion bajo)")
+        raise ValueError("Invalid remote name (only letters, digits, hyphen, and underscore)")
 
 
 def _ensure_unique(name: str, path: str) -> None:
     if name in list_remotes(path):
         raise RcloneError(
-            f"Ya existe un remote llamado '{name}'. Elegí otro nombre o eliminá el existente con: rclone config delete {name}"
+            f"A remote named '{name}' already exists. Pick another name or delete it with: rclone config delete {name}"
         )
 
 
@@ -73,7 +73,7 @@ def _rclone_config_path(path: str) -> pathlib.Path | None:
 def _format_result(output: str, backup: pathlib.Path | None) -> str:
     if backup is None:
         return output
-    return f"{output}\nBackup del config previo: {backup}"
+    return f"{output}\nPrevious config backed up at: {backup}"
 
 
 def list_shared_drives(name: str, path: str = DEFAULT_RCLONE_PATH) -> list[dict[str, str]]:
@@ -83,7 +83,7 @@ def list_shared_drives(name: str, path: str = DEFAULT_RCLONE_PATH) -> list[dict[
         capture_output=True, text=True, timeout=QUERY_TIMEOUT_SECONDS,
     )
     if cp.returncode != 0:
-        raise RcloneError((cp.stderr or "no pude listar Shared Drives").strip())
+        raise RcloneError((cp.stderr or "Could not list Shared Drives").strip())
     return _parse_shared_drives(cp.stdout)
 
 
@@ -101,14 +101,14 @@ def _parse_shared_drives(raw: str) -> list[dict[str, str]]:
 def set_shared_drive(name: str, drive_id: str, path: str = DEFAULT_RCLONE_PATH) -> None:
     _validate_name(name)
     if not re.fullmatch(r"[A-Za-z0-9_-]+", drive_id):
-        raise ValueError("ID de Shared Drive inválido")
+        raise ValueError("Invalid Shared Drive ID")
     exe = detect_rclone(path)
     cp = subprocess.run(
         [exe, "config", "update", name, f"team_drive={drive_id}"],
         capture_output=True, text=True, timeout=QUERY_TIMEOUT_SECONDS,
     )
     if cp.returncode != 0:
-        raise RcloneError((cp.stderr or "no pude actualizar el remote").strip())
+        raise RcloneError((cp.stderr or "Could not update remote").strip())
 
 
 def clear_shared_drive(name: str, path: str = DEFAULT_RCLONE_PATH) -> None:
@@ -124,9 +124,9 @@ def _spawn(command: list[str], interactive: bool) -> str:
     if interactive:
         cp = subprocess.run(command, timeout=OAUTH_TIMEOUT_SECONDS)
         if cp.returncode != 0:
-            raise RcloneError(f"rclone config create falló (exit {cp.returncode})")
+            raise RcloneError(f"rclone config create failed (exit {cp.returncode})")
         return ""
     cp = subprocess.run(command, capture_output=True, text=True, timeout=OAUTH_TIMEOUT_SECONDS)
     if cp.returncode != 0:
-        raise RcloneError((cp.stderr or "rclone config create falló").strip())
+        raise RcloneError((cp.stderr or "rclone config create failed").strip())
     return (cp.stdout or "") + (cp.stderr or "")

@@ -20,10 +20,10 @@ if [ -z "$PYTHON_BIN" ]; then
   done
 fi
 if [ -z "$PYTHON_BIN" ]; then
-  echo "Error: no encontré python3.10+. Instalá Python 3.10+ o pasá PYTHON=/ruta/al/python." >&2
+  echo "Error: could not find python3.10+. Install Python 3.10+ or pass PYTHON=/path/to/python." >&2
   exit 1
 fi
-echo "Usando Python: $PYTHON_BIN"
+echo "Using Python: $PYTHON_BIN"
 
 mkdir -p "$BIN_DIR"
 
@@ -49,64 +49,66 @@ install_rclone_to_local() {
     x86_64|amd64) rarch="amd64" ;;
     aarch64|arm64) rarch="arm64" ;;
     armv7l|armv6l) rarch="arm" ;;
-    *) echo "Error: arquitectura no soportada para auto-instalación de rclone: $arch" >&2; return 1 ;;
+    *) echo "Error: unsupported architecture for rclone auto-install: $arch" >&2; return 1 ;;
   esac
   os="$(uname -s | tr '[:upper:]' '[:lower:]')"
   url="https://downloads.rclone.org/rclone-current-${os}-${rarch}.zip"
   tmp="$(mktemp -d)"
-  echo "Descargando rclone desde $url ..."
+  echo "Downloading rclone from $url ..."
   if ! curl -fsSL "$url" -o "$tmp/rclone.zip"; then
-    echo "Error: no pude descargar rclone." >&2
+    echo "Error: could not download rclone." >&2
     rm -rf "$tmp"
     return 1
   fi
   if ! command -v unzip >/dev/null 2>&1; then
-    echo "Error: 'unzip' no está instalado. Instalalo (ej: sudo apt install unzip) y reintentá." >&2
+    echo "Error: 'unzip' is not installed. Install it (e.g. sudo apt install unzip) and retry." >&2
     rm -rf "$tmp"
     return 1
   fi
   (cd "$tmp" && unzip -oq rclone.zip)
   bin="$(find "$tmp" -type f -name rclone | head -n1)"
   if [ -z "$bin" ]; then
-    echo "Error: no encontré el binario rclone en el zip descargado." >&2
+    echo "Error: rclone binary not found in the downloaded zip." >&2
     rm -rf "$tmp"
     return 1
   fi
   install -m 0755 "$bin" "$BIN_DIR/rclone"
   rm -rf "$tmp"
-  echo "rclone instalado en: $BIN_DIR/rclone"
+  # Mark as installed by us so uninstall.sh knows it can remove it.
+  : > "$BIN_DIR/.rclone.managed-by-drive-sync"
+  echo "rclone installed at: $BIN_DIR/rclone"
 }
 
 RCLONE_BIN="$(pick_rclone)"
 if [ -z "$RCLONE_BIN" ]; then
-  echo "No encontré un rclone con soporte para bisync --resilient (>=1.66). Instalando uno actualizado en $BIN_DIR ..."
+  echo "No rclone with --resilient support found (>=1.66). Installing an up-to-date one in $BIN_DIR ..."
   install_rclone_to_local
   RCLONE_BIN="$BIN_DIR/rclone"
 fi
 
 if ! rclone_supports_resilient "$RCLONE_BIN"; then
-  echo "Error: el rclone seleccionado ($RCLONE_BIN) no soporta --resilient." >&2
+  echo "Error: selected rclone ($RCLONE_BIN) does not support --resilient." >&2
   exit 1
 fi
-echo "Usando rclone: $RCLONE_BIN ($("$RCLONE_BIN" version 2>/dev/null | head -1))"
+echo "Using rclone: $RCLONE_BIN ($("$RCLONE_BIN" version 2>/dev/null | head -1))"
 
 if ! "$PYTHON_BIN" -c 'import webview' >/dev/null 2>&1; then
   cat >&2 <<MSG
-Error: falta el paquete 'pywebview'.
+Error: 'pywebview' package missing.
 
-En Ubuntu/Debian:
+On Ubuntu/Debian:
   sudo apt install python3-gi gir1.2-webkit2-4.1 libcairo2-dev
   $PYTHON_BIN -m pip install --user pywebview
 
-(en otras distros, instalar el binding GTK + WebKit equivalente)
+(on other distros, install the equivalent GTK + WebKit bindings)
 MSG
   exit 1
 fi
 
 HAS_TRAY=1
 if ! "$PYTHON_BIN" -c 'import pystray, PIL' >/dev/null 2>&1; then
-  echo "Advertencia: 'pystray' o 'Pillow' no instalados — el icono de la bandeja no estará disponible." >&2
-  echo "  Para habilitarlo: $PYTHON_BIN -m pip install --user pystray Pillow" >&2
+  echo "Warning: 'pystray' or 'Pillow' not installed — the tray icon will not be available." >&2
+  echo "  To enable it: $PYTHON_BIN -m pip install --user pystray Pillow" >&2
   HAS_TRAY=0
 fi
 
@@ -147,7 +149,7 @@ if [ "$(uname -s)" = "Linux" ]; then
 [Desktop Entry]
 Type=Application
 Name=Drive Sync Desktop
-Comment=Sync de carpetas con Google Drive usando rclone
+Comment=Sync folders with Google Drive using rclone
 Exec=$BIN_DIR/drive-sync-desktop
 Terminal=false
 Categories=Utility;
@@ -179,7 +181,7 @@ if [ "$HAS_TRAY" = "1" ]; then
 [Desktop Entry]
 Type=Application
 Name=Drive Sync Tray
-Comment=Icono de estado de Drive Sync
+Comment=Drive Sync status icon
 Exec=$BIN_DIR/drive-sync-desktop-tray
 X-GNOME-Autostart-enabled=true
 NoDisplay=false
@@ -187,11 +189,11 @@ Terminal=false
 EOF
 fi
 
-echo "Instalado en: $BIN_DIR/drive-sync-desktop"
-echo "Si $BIN_DIR no está en PATH, agregalo a tu shell."
-echo "Para correr el agente manualmente: $BIN_DIR/drive-sync-desktop-agent"
-echo "Para activarlo como servicio: systemctl --user enable --now $APP_ID-agent.service"
+echo "Installed at: $BIN_DIR/drive-sync-desktop"
+echo "If $BIN_DIR is not in your PATH, add it to your shell."
+echo "To run the agent manually: $BIN_DIR/drive-sync-desktop-agent"
+echo "To enable it as a service: systemctl --user enable --now $APP_ID-agent.service"
 if [ "$HAS_TRAY" = "1" ]; then
-  echo "Icono de bandeja autostart: $AUTOSTART_DIR/$APP_ID-tray.desktop"
-  echo "Para arrancarlo ya: $BIN_DIR/drive-sync-desktop-tray &"
+  echo "Tray autostart entry: $AUTOSTART_DIR/$APP_ID-tray.desktop"
+  echo "To start it now: $BIN_DIR/drive-sync-desktop-tray &"
 fi

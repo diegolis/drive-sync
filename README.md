@@ -1,5 +1,10 @@
 # Drive Sync Desktop
 
+[![tests](https://github.com/diegolis/drive-sync/actions/workflows/test.yml/badge.svg)](https://github.com/diegolis/drive-sync/actions/workflows/test.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](#)
+[![platform: Linux](https://img.shields.io/badge/platform-Linux-lightgrey.svg)](#)
+
 A Linux desktop app for syncing local folders with Google Drive, with a simple UX, using `rclone` as the sync engine.
 
 ## Status
@@ -37,7 +42,6 @@ Don't reinvent the sync engine. The app orchestrates, validates, persists state,
 - [`docs/mvp.md`](./docs/mvp.md): scope, features, and roadmap
 - [`docs/architecture.md`](./docs/architecture.md): technical architecture
 - [`config/example.sync.json`](./config/example.sync.json): example config (importable via `--import-config`)
-- [`preview.html`](./preview.html): visual mockup of the concept
 
 ## Important decision
 Bidirectional sync (`bisync`) is supported, but the baseline must be initialized explicitly from the UI or with `--resync`. It is never enabled silently.
@@ -49,6 +53,17 @@ chmod +x install.sh
 ./install.sh
 drive-sync-desktop
 ```
+
+`install.sh` will download a recent `rclone` to `~/.local/bin/rclone` if your system rclone is too old for `bisync --resilient`. It never touches the system rclone.
+
+## Contributing
+See [CONTRIBUTING.md](./CONTRIBUTING.md). Bug reports and feature requests are tracked in [Issues](https://github.com/diegolis/drive-sync/issues).
+
+## Security
+See [SECURITY.md](./SECURITY.md) for the disclosure process.
+
+## Code of Conduct
+This project follows the [Contributor Covenant](./CODE_OF_CONDUCT.md).
 
 ## License
 [MIT](./LICENSE).

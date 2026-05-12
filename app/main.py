@@ -8,7 +8,7 @@ from dataclasses import asdict
 
 from drive_sync_desktop.agent import main as agent_main
 from drive_sync_desktop.common import APP_NAME, AppInfo, db_path, ensure_dirs
-from drive_sync_desktop.config_io import import_config
+from drive_sync_desktop.config_io import ConfigImportError, import_config
 from drive_sync_desktop.onboarding import add_drive_remote
 from drive_sync_desktop.rclone_backend import list_remotes, version
 from drive_sync_desktop.storage import init_db, list_jobs
@@ -34,26 +34,26 @@ def _has_graphical_session() -> bool:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Drive Sync Desktop")
-    parser.add_argument("--agent", action="store_true", help="Corre el agente en loop")
-    parser.add_argument("--tray", action="store_true", help="Corre el icono de la bandeja")
-    parser.add_argument("--self-test", action="store_true", help="Smoke test sin UI")
-    parser.add_argument("--import-config", metavar="PATH", help="Importa jobs desde JSON")
-    parser.add_argument("--add-remote", metavar="NAME", help="Conecta Google Drive vía OAuth y guarda el remote")
+    parser.add_argument("--agent", action="store_true", help="Run the agent loop")
+    parser.add_argument("--tray", action="store_true", help="Run the tray icon")
+    parser.add_argument("--self-test", action="store_true", help="Smoke test without UI")
+    parser.add_argument("--import-config", metavar="PATH", help="Import jobs from JSON")
+    parser.add_argument("--add-remote", metavar="NAME", help="Connect Google Drive via OAuth and save the remote")
     return parser
 
 
 def _run_add_remote(name: str) -> int:
-    print(f"Conectando Google Drive como '{name}'. El browser se va a abrir para autorizar.")
+    print(f"Connecting Google Drive as '{name}'. The browser will open to authorize.")
     add_drive_remote(name, interactive=True)
-    print(f"Remote '{name}' agregado.")
+    print(f"Remote '{name}' added.")
     return 0
 
 
 def _no_display_message() -> str:
     return (
-        f"{APP_NAME} necesita una sesión gráfica. No encontré DISPLAY/WAYLAND_DISPLAY.\n"
-        "Abrilo desde tu escritorio o una terminal dentro de tu sesión gráfica.\n"
-        "Si querés probarlo headless: xvfb-run -a ~/.local/bin/drive-sync-desktop"
+        f"{APP_NAME} needs a graphical session. DISPLAY/WAYLAND_DISPLAY is not set.\n"
+        "Launch it from your desktop or from a terminal inside your graphical session.\n"
+        "For headless testing: xvfb-run -a ~/.local/bin/drive-sync-desktop"
     )
 
 
@@ -66,8 +66,12 @@ def main() -> int:
     if args.add_remote:
         return _run_add_remote(args.add_remote)
     if args.import_config:
-        count = import_config(args.import_config)
-        print(f"Importados {count} jobs")
+        try:
+            count = import_config(args.import_config)
+        except ConfigImportError as exc:
+            print(f"Could not import config: {exc}", file=sys.stderr)
+            return 4
+        print(f"Imported {count} jobs")
         return 0
     if args.agent:
         sys.argv = [sys.argv[0], "--loop", *remaining]
@@ -87,7 +91,14 @@ def _run_ui() -> int:
     try:
         from drive_sync_desktop.ui import main as ui_main
     except ImportError as exc:
-        print(f"No pude cargar la UI: {exc}\nInstalá Tkinter (ej: sudo apt install python3-tk).", file=sys.stderr)
+        print(
+            f"Could not load the UI: {exc}\n"
+            "Install pywebview and its system bindings.\n"
+            "On Ubuntu/Debian:\n"
+            "  sudo apt install python3-gi gir1.2-webkit2-4.1 libcairo2-dev\n"
+            "  pip install --user pywebview",
+            file=sys.stderr,
+        )
         return 3
     ui_main()
     return 0

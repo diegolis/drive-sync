@@ -73,7 +73,7 @@ def test_rejects_existing_remote(monkeypatch):
     monkeypatch.setattr(onboarding.subprocess, "run", _fake_run_ok)
     with pytest.raises(RcloneError) as exc:
         onboarding.add_drive_remote("drive")
-    assert "Ya existe un remote" in str(exc.value)
+    assert "already exists" in str(exc.value)
 
 
 def test_list_shared_drives_parses_json(monkeypatch):

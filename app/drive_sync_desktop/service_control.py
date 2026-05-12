@@ -53,6 +53,6 @@ def _run(cmd: list[str]) -> None:
     try:
         cp = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT_ACTION)
     except FileNotFoundError as exc:
-        raise RuntimeError("systemctl no está disponible") from exc
+        raise RuntimeError("systemctl is not available") from exc
     if cp.returncode != 0:
-        raise RuntimeError((cp.stderr or cp.stdout).strip() or f"systemctl falló (exit {cp.returncode})")
+        raise RuntimeError((cp.stderr or cp.stdout).strip() or f"systemctl failed (exit {cp.returncode})")

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -15,14 +15,14 @@
       </div>
       <div class="topbar-right">
         <button id="agent-pill" class="pill agent-pill" hidden type="button"></button>
-        <button id="new-job-btn" class="btn btn-primary" hidden>+ Nueva sync</button>
+        <button id="new-job-btn" class="btn btn-primary" hidden>+ New sync</button>
         <details id="overflow-menu" class="overflow-menu">
-          <summary class="btn btn-ghost icon-btn" title="Más opciones">⋯</summary>
+          <summary class="btn btn-ghost icon-btn" title="More options">⋯</summary>
           <div class="overflow-items">
-            <button class="overflow-item" data-action="connect-drive">Conectar otra cuenta</button>
-            <button class="overflow-item" id="overflow-agent-toggle" data-action="toggle-agent">Activar agente</button>
+            <button class="overflow-item" data-action="connect-drive">Connect another account</button>
+            <button class="overflow-item" id="overflow-agent-toggle" data-action="toggle-agent">Enable agent</button>
             <div class="overflow-divider"></div>
-            <div class="overflow-info" id="overflow-remotes">Sin cuentas</div>
+            <div class="overflow-info" id="overflow-remotes">No accounts connected</div>
           </div>
         </details>
       </div>
@@ -31,23 +31,23 @@
     <main>
       <div id="agent-warning" class="banner banner-warn hidden">
         <div class="banner-text">
-          <strong>Agente de sincronización apagado.</strong>
+          <strong>Sync agent is off.</strong>
           <span id="agent-warning-detail"></span>
         </div>
-        <button id="agent-warning-action" class="btn btn-primary">Activar agente</button>
+        <button id="agent-warning-action" class="btn btn-primary">Enable agent</button>
       </div>
       <div id="empty-no-remote" class="empty hidden">
         <div class="empty-icon">⛅</div>
-        <h2>Conectá tu Google Drive</h2>
-        <p>Necesitamos acceso para crear y sincronizar carpetas.</p>
-        <button class="btn btn-primary" data-action="connect-drive">Conectar</button>
+        <h2>Connect your Google Drive</h2>
+        <p>We need access to create and sync folders.</p>
+        <button class="btn btn-primary" data-action="connect-drive">Connect</button>
       </div>
 
       <div id="empty-no-jobs" class="empty hidden">
         <div class="empty-icon">📁</div>
-        <h2>Aún no tenés sincronizaciones</h2>
-        <p>Elegí una carpeta local y mandala a Drive.</p>
-        <button class="btn btn-primary" data-action="new-job">Crear primera sync</button>
+        <h2>No syncs yet</h2>
+        <p>Pick a local folder and send it to Drive.</p>
+        <button class="btn btn-primary" data-action="new-job">Create your first sync</button>
       </div>
 
       <div id="job-list" class="card-grid"></div>
@@ -64,12 +64,12 @@
               <span class="job-dest"></span>
             </div>
           </div>
-          <button class="btn btn-ghost icon-btn action-more" title="Más">⋯</button>
+          <button class="btn btn-ghost icon-btn action-more" title="More">⋯</button>
         </div>
         <div class="job-status"></div>
         <div class="card-actions">
           <button class="btn btn-secondary action-dry">Dry run</button>
-          <button class="btn btn-primary action-sync">Sync ahora</button>
+          <button class="btn btn-primary action-sync">Sync now</button>
         </div>
       </article>
     </template>
@@ -77,76 +77,82 @@
     <dialog id="job-modal" class="modal">
       <form id="job-form">
         <header class="modal-header">
-          <h2 id="job-modal-title">Nueva sync</h2>
+          <h2 id="job-modal-title">New sync</h2>
           <button type="button" class="btn btn-ghost icon-btn" data-action="close-job">×</button>
         </header>
         <div class="modal-body">
           <div class="field">
-            <label for="job-local">Carpeta local</label>
+            <label for="job-local">Local folder</label>
             <div class="input-row">
-              <input id="job-local" name="local_path" placeholder="/home/usuario/Documents" required>
-              <button type="button" class="btn btn-secondary" data-action="pick-folder">Elegir…</button>
+              <input id="job-local" name="local_path" placeholder="/home/user/Documents" required>
+              <button type="button" class="btn btn-secondary" data-action="pick-folder">Browse…</button>
             </div>
           </div>
           <div class="field-row">
             <div class="field">
-              <label for="job-remote">Cuenta</label>
+              <label for="job-remote">Account</label>
               <select id="job-remote" name="remote_name" required></select>
             </div>
             <div class="field">
-              <label for="job-remote-path">Carpeta en Drive</label>
+              <label for="job-remote-path">Folder in Drive</label>
               <div class="input-row">
-                <input id="job-remote-path" name="remote_path" placeholder="(raíz)">
-                <button type="button" class="btn btn-secondary" data-action="pick-remote">Elegir…</button>
+                <input id="job-remote-path" name="remote_path" placeholder="(root)">
+                <button type="button" class="btn btn-secondary" data-action="pick-remote">Browse…</button>
               </div>
             </div>
           </div>
           <div class="field">
-            <label>Tipo</label>
+            <label>Mode</label>
             <div class="mode-grid">
               <label class="mode-card">
                 <input type="radio" name="mode" value="copy" checked>
                 <span class="mode-icon">↑</span>
                 <strong>Backup</strong>
-                <p>Subo a Drive. Nunca borro.</p>
+                <p>Upload to Drive. Never delete.</p>
               </label>
               <label class="mode-card">
                 <input type="radio" name="mode" value="bisync">
                 <span class="mode-icon">⇄</span>
-                <strong>Sincronizar</strong>
-                <p>Cambios en ambos lados se reflejan.</p>
+                <strong>Sync</strong>
+                <p>Changes on either side are reflected.</p>
               </label>
               <label class="mode-card subtle">
                 <input type="radio" name="mode" value="sync">
                 <span class="mode-icon">⇒</span>
-                <strong>Espejo <span class="badge">avanzado</span></strong>
-                <p>Drive refleja exacto. Borra si borrás local.</p>
+                <strong>Mirror <span class="badge">advanced</span></strong>
+                <p>Drive mirrors exactly. Deletes if you delete locally.</p>
               </label>
             </div>
           </div>
           <details class="advanced">
-            <summary>Opciones avanzadas</summary>
+            <summary>Advanced options</summary>
             <div class="field checkbox-row">
               <label class="checkbox">
                 <input type="checkbox" id="job-auto" name="auto_sync">
-                <span>Sincronizar automáticamente cada</span>
+                <span>Sync automatically every</span>
                 <input type="number" id="job-interval" name="interval_minutes" value="15" min="1" class="inline-number">
                 <span>min</span>
               </label>
             </div>
-            <div class="field">
-              <label for="job-name">Nombre (opcional)</label>
-              <input id="job-name" name="name" placeholder="Se autogenera desde la carpeta">
+            <div class="field checkbox-row">
+              <label class="checkbox">
+                <input type="checkbox" id="job-dry-required" name="dry_run_required" checked>
+                <span>Require a dry-run confirmation before destructive runs</span>
+              </label>
             </div>
             <div class="field">
-              <label for="job-excludes">Excluir patrones (uno por línea)</label>
+              <label for="job-name">Name (optional)</label>
+              <input id="job-name" name="name" placeholder="Auto-generated from the folder name">
+            </div>
+            <div class="field">
+              <label for="job-excludes">Exclude patterns (one per line)</label>
               <textarea id="job-excludes" name="excludes" rows="3" placeholder="*.tmp&#10;node_modules/**"></textarea>
             </div>
           </details>
         </div>
         <footer class="modal-footer">
-          <button type="button" class="btn btn-ghost" data-action="close-job">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Guardar</button>
+          <button type="button" class="btn btn-ghost" data-action="close-job">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
         </footer>
       </form>
     </dialog>
@@ -161,55 +167,55 @@
       </header>
       <div class="detail-actions">
         <button class="btn btn-secondary" data-action="detail-dry">Dry run</button>
-        <button class="btn btn-primary" data-action="detail-sync">Sync ahora</button>
-        <button class="btn btn-secondary" id="detail-resync-btn" hidden data-action="detail-resync">Inicializar bisync</button>
+        <button class="btn btn-primary" data-action="detail-sync">Sync now</button>
+        <button class="btn btn-secondary" id="detail-resync-btn" hidden data-action="detail-resync">Initialize bisync</button>
       </div>
-      <h3 class="section-title">Última actividad</h3>
+      <h3 class="section-title">Recent activity</h3>
       <div id="detail-runs" class="run-list"></div>
-      <h3 class="section-title">Configuración</h3>
+      <h3 class="section-title">Configuration</h3>
       <div id="detail-config" class="config-grid"></div>
       <footer class="modal-footer">
-        <button class="btn btn-ghost btn-danger" data-action="detail-delete">Eliminar</button>
-        <button class="btn btn-secondary" data-action="detail-edit">Editar</button>
+        <button class="btn btn-ghost btn-danger" data-action="detail-delete">Delete</button>
+        <button class="btn btn-secondary" data-action="detail-edit">Edit</button>
       </footer>
     </dialog>
 
     <dialog id="shared-drive-modal" class="modal small">
       <header class="modal-header">
-        <h2>Elegí destino</h2>
+        <h2>Pick a target</h2>
         <button type="button" class="btn btn-ghost icon-btn" data-action="close-shared">×</button>
       </header>
       <div class="modal-body">
-        <p class="muted">Detectamos Shared Drives accesibles en esta cuenta. ¿A cuál querés apuntar este remote?</p>
+        <p class="muted">We detected Shared Drives on this account. Which one should this remote point to?</p>
         <div class="field">
           <label class="checkbox option-row">
             <input type="radio" name="shared-target" value="" checked>
-            <span><strong>Mi Drive</strong><br><span class="muted">tu Drive personal</span></span>
+            <span><strong>My Drive</strong><br><span class="muted">your personal Drive</span></span>
           </label>
           <div id="shared-drive-options"></div>
         </div>
       </div>
       <footer class="modal-footer">
-        <button type="button" class="btn btn-ghost" data-action="close-shared">Saltar</button>
-        <button type="button" class="btn btn-primary" id="shared-confirm">Confirmar</button>
+        <button type="button" class="btn btn-ghost" data-action="close-shared">Skip</button>
+        <button type="button" class="btn btn-primary" id="shared-confirm">Confirm</button>
       </footer>
     </dialog>
 
     <dialog id="folder-picker-modal" class="modal">
       <header class="modal-header">
         <div class="picker-header">
-          <h2>Carpeta en Drive</h2>
+          <h2>Folder in Drive</h2>
           <p id="folder-picker-breadcrumbs" class="breadcrumbs"></p>
         </div>
         <button type="button" class="btn btn-ghost icon-btn" data-action="close-folder-picker">×</button>
       </header>
       <div class="modal-body">
-        <div id="folder-picker-list" class="folder-list">Cargando…</div>
-        <button type="button" class="btn btn-ghost new-folder-btn" id="folder-picker-new">+ Nueva carpeta acá</button>
+        <div id="folder-picker-list" class="folder-list">Loading…</div>
+        <button type="button" class="btn btn-ghost new-folder-btn" id="folder-picker-new">+ New folder here</button>
       </div>
       <footer class="modal-footer">
-        <button type="button" class="btn btn-ghost" data-action="close-folder-picker">Cancelar</button>
-        <button type="button" class="btn btn-primary" id="folder-picker-confirm">Elegir esta carpeta</button>
+        <button type="button" class="btn btn-ghost" data-action="close-folder-picker">Cancel</button>
+        <button type="button" class="btn btn-primary" id="folder-picker-confirm">Pick this folder</button>
       </footer>
     </dialog>
 

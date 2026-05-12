@@ -24,10 +24,10 @@ STATE_COLORS = {
     "error": (255, 125, 125),
 }
 STATE_LABELS = {
-    "off": "Drive Sync — agente apagado",
-    "ok": "Drive Sync — todo OK",
-    "warn": "Drive Sync — alguna sync necesita atención",
-    "error": "Drive Sync — error en alguna sync",
+    "off": "Drive Sync — agent off",
+    "ok": "Drive Sync — all good",
+    "warn": "Drive Sync — a sync needs attention",
+    "error": "Drive Sync — a sync errored",
 }
 
 
@@ -37,7 +37,7 @@ _LAST_STATE = "off"
 
 def main() -> None:
     if not _acquire_lock():
-        print("[tray] otra instancia ya está corriendo, salgo.", file=sys.stderr)
+        print("[tray] another instance is already running, exiting.", file=sys.stderr)
         return
     init_db()
     icon = pystray.Icon(
@@ -70,12 +70,12 @@ def _acquire_lock() -> bool:
 
 def _build_menu() -> pystray.Menu:
     return pystray.Menu(
-        pystray.MenuItem("Abrir Drive Sync", _open_app, default=True),
+        pystray.MenuItem("Open Drive Sync", _open_app, default=True),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Activar agente", _enable_agent, visible=lambda _: not _agent_is_active()),
-        pystray.MenuItem("Desactivar agente", _disable_agent, visible=lambda _: _agent_is_active()),
+        pystray.MenuItem("Enable agent", _enable_agent, visible=lambda _: not _agent_is_active()),
+        pystray.MenuItem("Disable agent", _disable_agent, visible=lambda _: _agent_is_active()),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Salir", _quit),
+        pystray.MenuItem("Quit", _quit),
     )
 
 

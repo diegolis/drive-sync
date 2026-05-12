@@ -86,6 +86,7 @@ No conflict detection in the MVP. `bisync` delegates that logic to `rclone`. Roa
 - `interval_minutes`, `auto_sync`, `dry_run_required`
 - `excludes` (one per line)
 - `last_run_at`, `last_status`, `last_summary`
+- `last_auto_resync_at` (added via in-place migration in `storage._migrate`; tracks when the agent last auto-recovered a bisync baseline)
 - `created_at`, `updated_at`
 
 ### `runs`

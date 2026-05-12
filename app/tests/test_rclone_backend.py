@@ -103,7 +103,7 @@ def test_summarize_falls_back_to_tail():
 
 def test_summarize_handles_empty_failure():
     result = CommandResult(["rclone"], 1, "", "", "/tmp/x.log")
-    assert "Falló" in rclone_backend.summarize(result)
+    assert "Failed" in rclone_backend.summarize(result)
     assert "OK" not in rclone_backend.summarize(replace(result, exit_code=1))
 
 

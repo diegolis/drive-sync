@@ -35,7 +35,7 @@ class CommandResult:
 def detect_rclone(path: str = DEFAULT_RCLONE_PATH) -> str:
     resolved = shutil.which(path) or (path if pathlib.Path(path).exists() else "")
     if not resolved:
-        raise RcloneError("No encontré rclone en PATH")
+        raise RcloneError("Could not find rclone in PATH")
     return resolved
 
 
@@ -43,7 +43,7 @@ def version(path: str = DEFAULT_RCLONE_PATH) -> str:
     exe = detect_rclone(path)
     cp = subprocess.run([exe, "version"], capture_output=True, text=True, timeout=30)
     if cp.returncode != 0:
-        raise RcloneError(cp.stderr.strip() or "Falló rclone version")
+        raise RcloneError(cp.stderr.strip() or "rclone version failed")
     return cp.stdout.strip()
 
 
@@ -51,7 +51,7 @@ def list_remotes(path: str = DEFAULT_RCLONE_PATH) -> list[str]:
     exe = detect_rclone(path)
     cp = subprocess.run([exe, "listremotes"], capture_output=True, text=True, timeout=30)
     if cp.returncode != 0:
-        raise RcloneError(cp.stderr.strip() or "No pude listar remotes")
+        raise RcloneError(cp.stderr.strip() or "Could not list remotes")
     return [line.strip().rstrip(":") for line in cp.stdout.splitlines() if line.strip()]
 
 
@@ -75,7 +75,7 @@ def list_remote_folders(remote_name: str, path: str = "", rclone_path: str = DEF
         capture_output=True, text=True, timeout=30,
     )
     if cp.returncode != 0:
-        raise RcloneError(cp.stderr.strip() or "no pude listar carpetas")
+        raise RcloneError(cp.stderr.strip() or "Could not list folders")
     return sorted(line.rstrip("/").strip() for line in cp.stdout.splitlines() if line.strip())
 
 
@@ -84,7 +84,7 @@ def make_remote_folder(remote_name: str, path: str, rclone_path: str = DEFAULT_R
     target = f"{remote_name}:{path.lstrip('/')}"
     cp = subprocess.run([exe, "mkdir", target], capture_output=True, text=True, timeout=30)
     if cp.returncode != 0:
-        raise RcloneError(cp.stderr.strip() or "no pude crear carpeta")
+        raise RcloneError(cp.stderr.strip() or "Could not create folder")
 
 
 def _classify_remotes(data: dict) -> list[dict]:
@@ -142,9 +142,14 @@ def _capture(command: list[str], log_path: str, timeout: int) -> CommandResult:
         stdout, stderr, code = cp.stdout, cp.stderr, cp.returncode
     except subprocess.TimeoutExpired as exc:
         stdout = _decode(exc.stdout)
-        stderr = _decode(exc.stderr) + f"\nTIMEOUT tras {timeout}s\n"
+        stderr = _decode(exc.stderr) + f"\nTIMEOUT after {timeout}s\n"
         code = 124
-    pathlib.Path(log_path).write_text(_combined(stdout, stderr), encoding="utf-8")
+    log = pathlib.Path(log_path)
+    log.write_text(_combined(stdout, stderr), encoding="utf-8")
+    try:
+        log.chmod(0o600)
+    except OSError:
+        pass
     return CommandResult(command, code, stdout, stderr, log_path)
 
 
@@ -156,7 +161,7 @@ def _decode(value) -> str:
 
 def _combined(stdout: str, stderr: str) -> str:
     parts = [p for p in [stdout, stderr] if p]
-    return "\n".join(parts) if parts else "(sin salida)\n"
+    return "\n".join(parts) if parts else "(no output)\n"
 
 
 _NOISE = ("bisync is experimental",)
@@ -168,7 +173,7 @@ def summarize(result: CommandResult) -> str:
     errors = [l for l in lines if "error" in l.lower() or "aborted" in l.lower()]
     info = [l for l in lines if any(k in l.lower() for k in _INFO_KEYWORDS)]
     interesting = errors + info or lines[-8:]
-    return "\n".join(interesting[:20]) or ("OK" if result.ok else "Falló sin salida útil")
+    return "\n".join(interesting[:20]) or ("OK" if result.ok else "Failed with no usable output")
 
 
 def _meaningful_lines(text: str) -> list[str]:
