@@ -1,0 +1,25 @@
+{
+  "app": {
+    "rclonePath": "rclone",
+    "logLevel": "info",
+    "logsDir": "~/.config/drive-sync-desktop/logs"
+  },
+  "jobs": [
+    {
+      "id": "docs-drive",
+      "name": "Docs -> Drive",
+      "localPath": "/path/to/your/local/folder",
+      "remote": "gdrive",
+      "remotePath": "Backups/Documents",
+      "mode": "copy",
+      "enabled": true,
+      "scheduleMinutes": 15,
+      "dryRunRequired": true,
+      "exclude": [
+        "*.tmp",
+        ".DS_Store",
+        "node_modules/**"
+      ]
+    }
+  ]
+}

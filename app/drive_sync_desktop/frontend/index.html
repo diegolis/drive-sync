@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Drive Sync</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">⇡</span>
+        <span>Drive Sync</span>
+      </div>
+      <div class="topbar-right">
+        <button id="agent-pill" class="pill agent-pill" hidden type="button"></button>
+        <button id="new-job-btn" class="btn btn-primary" hidden>+ Nueva sync</button>
+        <details id="overflow-menu" class="overflow-menu">
+          <summary class="btn btn-ghost icon-btn" title="Más opciones">⋯</summary>
+          <div class="overflow-items">
+            <button class="overflow-item" data-action="connect-drive">Conectar otra cuenta</button>
+            <button class="overflow-item" id="overflow-agent-toggle" data-action="toggle-agent">Activar agente</button>
+            <div class="overflow-divider"></div>
+            <div class="overflow-info" id="overflow-remotes">Sin cuentas</div>
+          </div>
+        </details>
+      </div>
+    </header>
+
+    <main>
+      <div id="agent-warning" class="banner banner-warn hidden">
+        <div class="banner-text">
+          <strong>Agente de sincronización apagado.</strong>
+          <span id="agent-warning-detail"></span>
+        </div>
+        <button id="agent-warning-action" class="btn btn-primary">Activar agente</button>
+      </div>
+      <div id="empty-no-remote" class="empty hidden">
+        <div class="empty-icon">⛅</div>
+        <h2>Conectá tu Google Drive</h2>
+        <p>Necesitamos acceso para crear y sincronizar carpetas.</p>
+        <button class="btn btn-primary" data-action="connect-drive">Conectar</button>
+      </div>
+
+      <div id="empty-no-jobs" class="empty hidden">
+        <div class="empty-icon">📁</div>
+        <h2>Aún no tenés sincronizaciones</h2>
+        <p>Elegí una carpeta local y mandala a Drive.</p>
+        <button class="btn btn-primary" data-action="new-job">Crear primera sync</button>
+      </div>
+
+      <div id="job-list" class="card-grid"></div>
+    </main>
+
+    <template id="job-card-template">
+      <article class="card job-card">
+        <div class="card-top">
+          <span class="job-icon">📁</span>
+          <div class="job-titles">
+            <h3 class="job-name"></h3>
+            <div class="job-route">
+              <span class="job-arrow"></span>
+              <span class="job-dest"></span>
+            </div>
+          </div>
+          <button class="btn btn-ghost icon-btn action-more" title="Más">⋯</button>
+        </div>
+        <div class="job-status"></div>
+        <div class="card-actions">
+          <button class="btn btn-secondary action-dry">Dry run</button>
+          <button class="btn btn-primary action-sync">Sync ahora</button>
+        </div>
+      </article>
+    </template>
+
+    <dialog id="job-modal" class="modal">
+      <form id="job-form">
+        <header class="modal-header">
+          <h2 id="job-modal-title">Nueva sync</h2>
+          <button type="button" class="btn btn-ghost icon-btn" data-action="close-job">×</button>
+        </header>
+        <div class="modal-body">
+          <div class="field">
+            <label for="job-local">Carpeta local</label>
+            <div class="input-row">
+              <input id="job-local" name="local_path" placeholder="/home/usuario/Documents" required>
+              <button type="button" class="btn btn-secondary" data-action="pick-folder">Elegir…</button>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="job-remote">Cuenta</label>
+              <select id="job-remote" name="remote_name" required></select>
+            </div>
+            <div class="field">
+              <label for="job-remote-path">Carpeta en Drive</label>
+              <div class="input-row">
+                <input id="job-remote-path" name="remote_path" placeholder="(raíz)">
+                <button type="button" class="btn btn-secondary" data-action="pick-remote">Elegir…</button>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Tipo</label>
+            <div class="mode-grid">
+              <label class="mode-card">
+                <input type="radio" name="mode" value="copy" checked>
+                <span class="mode-icon">↑</span>
+                <strong>Backup</strong>
+                <p>Subo a Drive. Nunca borro.</p>
+              </label>
+              <label class="mode-card">
+                <input type="radio" name="mode" value="bisync">
+                <span class="mode-icon">⇄</span>
+                <strong>Sincronizar</strong>
+                <p>Cambios en ambos lados se reflejan.</p>
+              </label>
+              <label class="mode-card subtle">
+                <input type="radio" name="mode" value="sync">
+                <span class="mode-icon">⇒</span>
+                <strong>Espejo <span class="badge">avanzado</span></strong>
+                <p>Drive refleja exacto. Borra si borrás local.</p>
+              </label>
+            </div>
+          </div>
+          <details class="advanced">
+            <summary>Opciones avanzadas</summary>
+            <div class="field checkbox-row">
+              <label class="checkbox">
+                <input type="checkbox" id="job-auto" name="auto_sync">
+                <span>Sincronizar automáticamente cada</span>
+                <input type="number" id="job-interval" name="interval_minutes" value="15" min="1" class="inline-number">
+                <span>min</span>
+              </label>
+            </div>
+            <div class="field">
+              <label for="job-name">Nombre (opcional)</label>
+              <input id="job-name" name="name" placeholder="Se autogenera desde la carpeta">
+            </div>
+            <div class="field">
+              <label for="job-excludes">Excluir patrones (uno por línea)</label>
+              <textarea id="job-excludes" name="excludes" rows="3" placeholder="*.tmp&#10;node_modules/**"></textarea>
+            </div>
+          </details>
+        </div>
+        <footer class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-action="close-job">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="detail-modal" class="modal">
+      <header class="modal-header">
+        <div>
+          <h2 id="detail-name"></h2>
+          <p id="detail-subtitle" class="muted"></p>
+        </div>
+        <button type="button" class="btn btn-ghost icon-btn" data-action="close-detail">×</button>
+      </header>
+      <div class="detail-actions">
+        <button class="btn btn-secondary" data-action="detail-dry">Dry run</button>
+        <button class="btn btn-primary" data-action="detail-sync">Sync ahora</button>
+        <button class="btn btn-secondary" id="detail-resync-btn" hidden data-action="detail-resync">Inicializar bisync</button>
+      </div>
+      <h3 class="section-title">Última actividad</h3>
+      <div id="detail-runs" class="run-list"></div>
+      <h3 class="section-title">Configuración</h3>
+      <div id="detail-config" class="config-grid"></div>
+      <footer class="modal-footer">
+        <button class="btn btn-ghost btn-danger" data-action="detail-delete">Eliminar</button>
+        <button class="btn btn-secondary" data-action="detail-edit">Editar</button>
+      </footer>
+    </dialog>
+
+    <dialog id="shared-drive-modal" class="modal small">
+      <header class="modal-header">
+        <h2>Elegí destino</h2>
+        <button type="button" class="btn btn-ghost icon-btn" data-action="close-shared">×</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted">Detectamos Shared Drives accesibles en esta cuenta. ¿A cuál querés apuntar este remote?</p>
+        <div class="field">
+          <label class="checkbox option-row">
+            <input type="radio" name="shared-target" value="" checked>
+            <span><strong>Mi Drive</strong><br><span class="muted">tu Drive personal</span></span>
+          </label>
+          <div id="shared-drive-options"></div>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-action="close-shared">Saltar</button>
+        <button type="button" class="btn btn-primary" id="shared-confirm">Confirmar</button>
+      </footer>
+    </dialog>
+
+    <dialog id="folder-picker-modal" class="modal">
+      <header class="modal-header">
+        <div class="picker-header">
+          <h2>Carpeta en Drive</h2>
+          <p id="folder-picker-breadcrumbs" class="breadcrumbs"></p>
+        </div>
+        <button type="button" class="btn btn-ghost icon-btn" data-action="close-folder-picker">×</button>
+      </header>
+      <div class="modal-body">
+        <div id="folder-picker-list" class="folder-list">Cargando…</div>
+        <button type="button" class="btn btn-ghost new-folder-btn" id="folder-picker-new">+ Nueva carpeta acá</button>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-action="close-folder-picker">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="folder-picker-confirm">Elegir esta carpeta</button>
+      </footer>
+    </dialog>
+
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

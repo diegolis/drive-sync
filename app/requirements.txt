@@ -1,0 +1,6 @@
+pywebview>=5.0
+
+# Opcional: icono en la bandeja del sistema (tray).
+# Si faltan, la app corre igual pero sin tray.
+pystray>=0.19
+Pillow>=10.0
