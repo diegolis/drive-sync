@@ -1,0 +1,67 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write  # needed to create the GitHub Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for release notes
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify tag matches package version
+        run: |
+          set -eu
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG_VER="$(awk -F\" '/^__version__/ {print $2}' app/drive_sync_desktop/__init__.py)"
+          echo "Tag version: $TAG"
+          echo "Package version: $PKG_VER"
+          if [ "$TAG" != "$PKG_VER" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package version $PKG_VER"
+            echo "::error::Update __version__ in app/drive_sync_desktop/__init__.py and retag."
+            exit 1
+          fi
+
+      - name: Build .deb
+        run: scripts/build-deb.sh
+
+      - name: Build source tarball
+        working-directory: app
+        run: ./make-package.sh
+
+      - name: Compute checksums
+        working-directory: dist
+        run: |
+          sha256sum *.deb *.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Inspect .deb
+        run: |
+          echo "=== control ==="
+          dpkg-deb -I dist/*.deb
+          echo
+          echo "=== contents ==="
+          dpkg-deb -c dist/*.deb | head -40
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Drive Sync Desktop ${{ github.ref_name }}"
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.deb
+            dist/*.tar.gz
+            dist/SHA256SUMS
