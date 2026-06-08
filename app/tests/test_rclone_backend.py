@@ -128,3 +128,73 @@ def test_summarize_prioritizes_errors():
     )
     summary = rclone_backend.summarize(result)
     assert summary.splitlines()[0].lower().startswith("error")
+
+
+def _write_lock(dir_path, name, pid):
+    import json
+    lock = dir_path / name
+    lock.write_text(json.dumps({"Session": name, "PID": str(pid)}), encoding="utf-8")
+    return lock
+
+
+def test_clear_stale_bisync_locks_removes_dead_pid(tmp_path, monkeypatch, fake_rclone):
+    bisync = tmp_path / "bisync"
+    bisync.mkdir()
+    monkeypatch.setattr(rclone_backend, "_cache_dir", lambda path=rclone_backend.DEFAULT_RCLONE_PATH: tmp_path)
+    monkeypatch.setattr(rclone_backend, "_pid_alive", lambda pid: False)
+    lock = _write_lock(bisync, "stale..remote_.lck", 99999)
+
+    removed = rclone_backend.clear_stale_bisync_locks()
+
+    assert removed == ["stale..remote_.lck"]
+    assert not lock.exists()
+
+
+def test_clear_stale_bisync_locks_keeps_live_pid(tmp_path, monkeypatch, fake_rclone):
+    bisync = tmp_path / "bisync"
+    bisync.mkdir()
+    monkeypatch.setattr(rclone_backend, "_cache_dir", lambda path=rclone_backend.DEFAULT_RCLONE_PATH: tmp_path)
+    monkeypatch.setattr(rclone_backend, "_pid_alive", lambda pid: True)
+    lock = _write_lock(bisync, "live..remote_.lck", 4321)
+
+    removed = rclone_backend.clear_stale_bisync_locks()
+
+    assert removed == []
+    assert lock.exists()
+
+
+def test_clear_stale_bisync_locks_skips_malformed(tmp_path, monkeypatch, fake_rclone):
+    bisync = tmp_path / "bisync"
+    bisync.mkdir()
+    monkeypatch.setattr(rclone_backend, "_cache_dir", lambda path=rclone_backend.DEFAULT_RCLONE_PATH: tmp_path)
+    monkeypatch.setattr(rclone_backend, "_pid_alive", lambda pid: False)
+    bad = bisync / "bad..remote_.lck"
+    bad.write_text("not json", encoding="utf-8")
+
+    removed = rclone_backend.clear_stale_bisync_locks()
+
+    assert removed == []
+    assert bad.exists()
+
+
+def test_clear_stale_bisync_locks_no_cache_dir(monkeypatch):
+    monkeypatch.setattr(rclone_backend, "_cache_dir", lambda path=rclone_backend.DEFAULT_RCLONE_PATH: None)
+    assert rclone_backend.clear_stale_bisync_locks() == []
+
+
+def test_run_job_clears_locks_for_bisync(tmp_path, monkeypatch, fake_rclone):
+    calls = []
+    monkeypatch.setattr(rclone_backend, "clear_stale_bisync_locks", lambda path=rclone_backend.DEFAULT_RCLONE_PATH: calls.append(path) or [])
+    monkeypatch.setattr(rclone_backend, "_run", lambda command, label, timeout=0: CommandResult(list(command), 0, "", "", "/tmp/x.log"))
+
+    rclone_backend.run_job(_job("bisync"))
+    assert len(calls) == 1
+
+
+def test_run_job_skips_lock_clear_for_copy(monkeypatch, fake_rclone):
+    calls = []
+    monkeypatch.setattr(rclone_backend, "clear_stale_bisync_locks", lambda path=rclone_backend.DEFAULT_RCLONE_PATH: calls.append(path) or [])
+    monkeypatch.setattr(rclone_backend, "_run", lambda command, label, timeout=0: CommandResult(list(command), 0, "", "", "/tmp/x.log"))
+
+    rclone_backend.run_job(_job("copy"))
+    assert calls == []

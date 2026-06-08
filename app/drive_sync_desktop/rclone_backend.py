@@ -109,6 +109,65 @@ def _exclude_args(excludes: str | None) -> list[str]:
     return args
 
 
+def _cache_dir(path: str = DEFAULT_RCLONE_PATH) -> pathlib.Path | None:
+    """Resolve rclone's cache dir, where bisync stores its lock files."""
+    try:
+        exe = detect_rclone(path)
+        cp = subprocess.run([exe, "config", "paths"], capture_output=True, text=True, timeout=30)
+    except (RcloneError, OSError, subprocess.SubprocessError):
+        return None
+    for line in cp.stdout.splitlines():
+        if line.lower().startswith("cache dir:"):
+            return pathlib.Path(line.split(":", 1)[1].strip())
+    return None
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Process exists but is owned by another user — treat as alive.
+        return True
+    except OSError:
+        return True
+    return True
+
+
+def clear_stale_bisync_locks(path: str = DEFAULT_RCLONE_PATH) -> list[str]:
+    """Remove bisync lock files whose owning process is no longer running.
+
+    A bisync run interrupted by a crash or reboot leaves a lock file behind
+    that rclone refuses to override, blocking every later sync of the same
+    paths. The lock records the PID that created it; if that PID is dead, the
+    lock is orphaned and safe to delete.
+
+    Returns the names of the lock files that were removed.
+    """
+    cache = _cache_dir(path)
+    if cache is None:
+        return []
+    bisync_dir = cache / "bisync"
+    if not bisync_dir.is_dir():
+        return []
+    removed: list[str] = []
+    for lock in bisync_dir.glob("*.lck"):
+        try:
+            info = json.loads(lock.read_text(encoding="utf-8"))
+            pid = int(info.get("PID", 0))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if pid > 0 and _pid_alive(pid):
+            continue
+        try:
+            lock.unlink()
+            removed.append(lock.name)
+        except OSError:
+            continue
+    return removed
+
+
 def _build_command(
     job: dict,
     dry_run: bool = False,
@@ -194,8 +253,10 @@ def run_job(
     resync: bool = False,
     path: str = DEFAULT_RCLONE_PATH,
 ) -> CommandResult:
-    if resync and job["mode"] == "bisync":
-        _ensure_remote_dir(_remote_target(job), path)
+    if job["mode"] == "bisync":
+        clear_stale_bisync_locks(path)
+        if resync:
+            _ensure_remote_dir(_remote_target(job), path)
     command = _build_command(job, dry_run=dry_run, resync=resync, path=path)
     label = f"job-{job.get('id', 'adhoc')}-{'dry' if dry_run else 'sync'}"
     return _run(command, label)
