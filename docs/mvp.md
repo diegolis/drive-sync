@@ -12,11 +12,12 @@ Free options on Linux for automatic Drive sync are weak, discontinued, or hard t
 - [x] modern UI in HTML/CSS/JS embedded via pywebview (cards, modals, dark theme)
 - [x] Google Drive onboarding with OAuth from the app (UI or `--add-remote`)
 - [x] create/edit/delete jobs from the UI
-- [x] `copy`, `sync`, and `bisync` modes
+- [x] bidirectional sync (`rclone bisync`) as the only mode
 - [x] `--dry-run` with preview
 - [x] preview of the `rclone` command before executing
-- [x] explicit confirmation before destructive modes (`sync`, `bisync`)
-- [x] baseline initialization for `bisync` ("Initialize bisync" button + `--resync` in CLI)
+- [x] automatic baseline on first run (non-destructive merge with `--resync`)
+- [x] delete cap on every run (`--max-delete`, default 50%)
+- [x] conflict resolution: newer file wins, older copy kept renamed
 - [x] run history with stdout/stderr persisted
 - [x] agent loop with interval-based scheduler
 - [x] per-job lockfile to prevent concurrent runs
@@ -35,28 +36,29 @@ Free options on Linux for automatic Drive sync are weak, discontinued, or hard t
 
 ## Bidirectional sync: stance
 
-`bisync` is supported but never enabled silently. The UI requires:
-1. create the job in `bisync` mode
-2. click "Initialize bisync" once to establish the baseline (`--resync`)
-3. after that, each run goes without `--resync`
+Every job is bidirectional (`rclone bisync`). The safety model replaces the old "never enable silently" rule, because the baseline initialization is non-destructive:
 
-Accepted risks: a file edited on both sides, cross-deletions, concurrent renames. The resolution policy is defined by `rclone bisync`. Future improvements: a `conflicts` table and configurable resolution.
+1. the **first run** (manual or from the agent) runs `--resync`, which merges both sides — files are only copied, never deleted
+2. after that, each run propagates changes and deletions in both directions
+3. every run carries `--max-delete` (default 50%): if one side suddenly lost most of its files (unmounted disk, emptied folder), the run aborts instead of wiping the other side
+4. conflicts resolve to the newer file; the losing copy is kept renamed
+
+Accepted risks: concurrent renames, conflict-renamed copies needing manual cleanup. Future improvements: a `conflicts` table and UI surfacing.
 
 ## UX
 
 ### Main screen
 - topbar with brand, remote status, and a "+ New sync" button
 - differentiated empty states: no remotes vs no jobs
-- card grid: one card per sync with icon, path, mode (↑/⇒/⇄), colored status, and Sync / Dry run buttons
+- card grid: one card per sync with icon, path, ⇄ route, colored status, and Sync / Dry run buttons
 
 ### "New sync" modal
-- 3 visible fields: name, local folder (with native picker), Drive destination
-- visual mode selector: 3 cards (Safe backup / Mirror / Bidirectional) with descriptions
-- "Advanced options" collapsed: auto-sync, interval, excludes, dry-run required
+- 3 main fields: local folder (with native picker), account, Drive destination
+- always-visible options: auto-sync (on by default, every 15 min), name, excludes
 
 ### Detail modal
 - header with name + shortened path
-- actions: Dry run, Sync now, Initialize bisync (when applicable)
+- actions: Dry run, Sync now, Re-initialize (merge)
 - recent runs with relative time and summary
 - summarized configuration
 - footer with Delete and Edit
@@ -70,4 +72,4 @@ Accepted risks: a file edited on both sides, cross-deletions, concurrent renames
 - run `dry-run` and understand what will happen ✅
 - run a real sync and audit the result ✅
 - visible, actionable errors ✅
-- no silent deletions (lock + confirmation + dry-run) ✅
+- no silent mass deletions (lock + non-destructive first merge + `--max-delete`) ✅

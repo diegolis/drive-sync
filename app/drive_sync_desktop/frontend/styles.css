@@ -585,58 +585,6 @@ a:focus-visible,
   background: var(--accent-soft);
 }
 
-/* Mode cards */
-.mode-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 8px;
-}
-
-.mode-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px;
-  background: var(--soft);
-  border: 2px solid transparent;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-
-.mode-card:hover { background: var(--soft-2); }
-
-.mode-card input { display: none; }
-
-.mode-card:has(input:checked) {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.mode-card.subtle {
-  opacity: 0.85;
-}
-
-.mode-card.subtle:hover,
-.mode-card.subtle:has(input:checked) {
-  opacity: 1;
-}
-
-.badge {
-  display: inline-block;
-  font-size: 9.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  background: var(--soft-2);
-  color: var(--muted);
-  padding: 1px 6px;
-  border-radius: 4px;
-  margin-left: 4px;
-  vertical-align: middle;
-}
-
 .inline-number {
   width: 60px !important;
   padding: 4px 8px !important;
@@ -644,49 +592,7 @@ a:focus-visible,
   display: inline-block !important;
 }
 
-.mode-card .mode-icon {
-  font-size: 20px;
-  color: var(--accent);
-  margin-bottom: 4px;
-}
-
-.mode-card strong {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.mode-card p {
-  margin: 2px 0 0;
-  font-size: 11.5px;
-  color: var(--muted);
-  line-height: 1.4;
-}
-
 .advanced { margin-top: 8px; }
-
-.advanced summary {
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--muted);
-  padding: 8px 0;
-  user-select: none;
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.advanced summary::before {
-  content: "▸";
-  font-size: 10px;
-  transition: transform 0.15s;
-}
-
-.advanced[open] summary::before {
-  transform: rotate(90deg);
-}
-
-.advanced[open] summary { color: var(--text); }
 
 /* Detail modal */
 .detail-actions {

@@ -45,16 +45,14 @@ def test_job_lock_blocks_concurrent_acquire():
         assert raised
 
 
-def test_needs_baseline_only_for_bisync_without_resync(monkeypatch):
+def test_needs_baseline_when_no_resync_recorded(monkeypatch):
     monkeypatch.setattr(agent, "has_baseline_run", lambda jid: False)
-    assert agent._needs_baseline({"id": 1, "mode": "bisync"}) is True
-    assert agent._needs_baseline({"id": 2, "mode": "copy"}) is False
-    assert agent._needs_baseline({"id": 3, "mode": "sync"}) is False
+    assert agent._needs_baseline({"id": 1}) is True
 
 
 def test_needs_baseline_false_when_baseline_exists(monkeypatch):
     monkeypatch.setattr(agent, "has_baseline_run", lambda jid: True)
-    assert agent._needs_baseline({"id": 1, "mode": "bisync"}) is False
+    assert agent._needs_baseline({"id": 1}) is False
 
 
 def test_tick_auto_recovers_bisync_without_baseline(monkeypatch, capsys):

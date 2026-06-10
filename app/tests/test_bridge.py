@@ -7,6 +7,11 @@ from drive_sync_desktop.bridge import Bridge
 @pytest.fixture
 def bridge(monkeypatch):
     monkeypatch.setattr(bridge_module, "list_remotes", lambda: ["drive"])
+    monkeypatch.setattr(
+        bridge_module,
+        "list_remotes_detailed",
+        lambda: [{"name": "drive", "kind": "personal", "label": "Mi Drive"}],
+    )
     return Bridge()
 
 
@@ -16,7 +21,6 @@ def _payload(name="test", **overrides):
         "local_path": "/tmp",
         "remote_name": "drive",
         "remote_path": "Backups/Test",
-        "mode": "copy",
     }
     base.update(overrides)
     return base
@@ -41,53 +45,30 @@ def test_save_validates_required_fields(bridge):
         bridge.save_job({"name": "no-paths"})
 
 
-def test_save_validates_mode(bridge):
-    with pytest.raises(ValueError):
-        bridge.save_job(_payload(mode="weird"))
+def test_save_forces_bisync_even_with_legacy_mode_key(bridge):
+    job_id = bridge.save_job(_payload(mode="sync"))
+    assert bridge.get_job(job_id)["mode"] == "bisync"
 
 
 def test_save_normalizes_defaults(bridge):
     job_id = bridge.save_job(_payload("with-defaults"))
     job = bridge.get_job(job_id)
-    assert job["mode"] == "copy"
+    assert job["mode"] == "bisync"
     assert job["interval_minutes"] == 15
-    assert job["dry_run_required"] == 1
     assert job["auto_sync"] == 0
 
 
 def test_save_preserves_excludes_and_flags(bridge):
     job_id = bridge.save_job(_payload(
         "rich",
-        mode="bisync",
         interval_minutes=5,
         auto_sync=True,
         excludes="*.tmp\nnode_modules/**",
     ))
     job = bridge.get_job(job_id)
-    assert job["mode"] == "bisync"
     assert job["interval_minutes"] == 5
     assert job["auto_sync"] == 1
-    assert job["dry_run_required"] == 1
     assert "*.tmp" in job["excludes"]
-
-
-def test_save_respects_dry_run_required_flag(bridge):
-    enabled = bridge.save_job(_payload("dry-on", dry_run_required=True, local_path="/tmp/a"))
-    disabled = bridge.save_job(_payload("dry-off", dry_run_required=False, local_path="/tmp/b"))
-    assert bridge.get_job(enabled)["dry_run_required"] == 1
-    assert bridge.get_job(disabled)["dry_run_required"] == 0
-
-
-def test_save_defaults_dry_run_required_to_true(bridge):
-    # When the payload doesn't include the key, the safer default kicks in.
-    job_id = bridge.save_job({
-        "name": "default-dry",
-        "local_path": "/tmp/test/A",
-        "remote_name": "drive",
-        "remote_path": "X",
-        "mode": "copy",
-    })
-    assert bridge.get_job(job_id)["dry_run_required"] == 1
 
 
 def test_save_autonames_from_local_path(bridge):
@@ -95,18 +76,39 @@ def test_save_autonames_from_local_path(bridge):
         "local_path": "/tmp/test/Documents",
         "remote_name": "drive",
         "remote_path": "Backups/Docs",
-        "mode": "copy",
     })
     assert bridge.get_job(job_id)["name"] == "Documents"
 
 
-def test_save_keeps_remote_path_empty_when_omitted(bridge):
-    job_id = bridge.save_job({
-        "local_path": "/tmp/test/Photos",
-        "remote_name": "drive",
-        "mode": "copy",
-    })
+def test_save_rejects_empty_remote_path(bridge):
+    with pytest.raises(ValueError, match="folder in Drive"):
+        bridge.save_job({
+            "local_path": "/tmp/test/Photos",
+            "remote_name": "drive",
+        })
+
+
+def test_save_rejects_drive_root_as_remote_path(bridge):
+    with pytest.raises(ValueError, match="folder in Drive"):
+        bridge.save_job(_payload(remote_path="/"))
+
+
+def test_save_allows_root_for_shared_drive(monkeypatch, bridge):
+    monkeypatch.setattr(
+        bridge_module,
+        "list_remotes_detailed",
+        lambda: [{"name": "drive", "kind": "shared", "label": "Shared Drive"}],
+    )
+    job_id = bridge.save_job(_payload(remote_path=""))
     assert bridge.get_job(job_id)["remote_path"] == ""
+
+
+def test_save_rejects_root_when_remote_kind_unknown(monkeypatch, bridge):
+    def boom():
+        raise RuntimeError("rclone unavailable")
+    monkeypatch.setattr(bridge_module, "list_remotes_detailed", boom)
+    with pytest.raises(ValueError, match="folder in Drive"):
+        bridge.save_job(_payload(remote_path=""))
 
 
 def test_save_keeps_remote_path_explicit(bridge):
@@ -114,7 +116,6 @@ def test_save_keeps_remote_path_explicit(bridge):
         "local_path": "/tmp/test/Photos",
         "remote_name": "drive",
         "remote_path": "PhotosBackup",
-        "mode": "copy",
     })
     assert bridge.get_job(job_id)["remote_path"] == "PhotosBackup"
 
@@ -180,23 +181,42 @@ def test_pick_local_path_returns_empty_when_no_picker():
     assert b.pick_local_path() == ""
 
 
-def test_runs_listing_after_dry_run(monkeypatch, bridge):
-    job_id = bridge.save_job(_payload("for-runs"))
-    monkeypatch.setattr(bridge_module, "run_one", lambda jid, dry_run, resync: (True, "ok"))
-    result = bridge.run(job_id, dry_run=True, resync=False)
-    assert result == {"ok": True, "summary": "ok"}
+def test_run_first_run_promotes_to_resync(monkeypatch, bridge):
+    job_id = bridge.save_job(_payload("first-run"))
+    called = {}
 
+    def fake_run(jid, dry_run, resync):
+        called.update({"jid": jid, "dry_run": dry_run, "resync": resync})
+        return True, "merged"
 
-def test_run_blocks_bisync_without_baseline(monkeypatch, bridge):
-    job_id = bridge.save_job(_payload("bi", mode="bisync"))
-    monkeypatch.setattr(bridge_module, "run_one", lambda *a, **kw: pytest.fail("no debería ejecutarse"))
+    monkeypatch.setattr(bridge_module, "run_one", fake_run)
     result = bridge.run(job_id, dry_run=False, resync=False)
+    assert result == {"ok": True, "summary": "merged", "resync": True}
+    assert called["resync"] is True
+
+
+def test_run_keeps_normal_sync_after_baseline(monkeypatch, bridge):
+    job_id = bridge.save_job(_payload("steady"))
+    monkeypatch.setattr(bridge_module, "has_baseline_run", lambda jid: True)
+    called = {}
+
+    def fake_run(jid, dry_run, resync):
+        called.update({"resync": resync})
+        return True, "ok"
+
+    monkeypatch.setattr(bridge_module, "run_one", fake_run)
+    result = bridge.run(job_id, dry_run=False, resync=False)
+    assert result == {"ok": True, "summary": "ok", "resync": False}
+    assert called["resync"] is False
+
+
+def test_run_missing_job(bridge):
+    result = bridge.run(99999)
     assert result["ok"] is False
-    assert result.get("needs_resync") is True
 
 
-def test_run_allows_bisync_resync(monkeypatch, bridge):
-    job_id = bridge.save_job(_payload("bi-resync", mode="bisync"))
+def test_run_allows_explicit_resync(monkeypatch, bridge):
+    job_id = bridge.save_job(_payload("bi-resync"))
     called = {}
 
     def fake_run(jid, dry_run, resync):
@@ -205,22 +225,15 @@ def test_run_allows_bisync_resync(monkeypatch, bridge):
 
     monkeypatch.setattr(bridge_module, "run_one", fake_run)
     result = bridge.run(job_id, dry_run=False, resync=True)
-    assert result == {"ok": True, "summary": "baseline ok"}
+    assert result == {"ok": True, "summary": "baseline ok", "resync": True}
     assert called["resync"] is True
 
 
-def test_list_jobs_marks_bisync_without_baseline(bridge):
-    job_id = bridge.save_job(_payload("bi-mark", mode="bisync"))
+def test_list_jobs_marks_jobs_without_baseline(bridge):
+    job_id = bridge.save_job(_payload("bi-mark"))
     jobs = bridge.list_jobs()
     job = next(j for j in jobs if j["id"] == job_id)
     assert job["needs_baseline"] is True
-
-
-def test_list_jobs_does_not_mark_copy(bridge):
-    job_id = bridge.save_job(_payload("plain"))
-    jobs = bridge.list_jobs()
-    job = next(j for j in jobs if j["id"] == job_id)
-    assert job["needs_baseline"] is False
 
 
 def test_agent_status_proxies_service_control(monkeypatch, bridge):

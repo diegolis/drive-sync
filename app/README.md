@@ -5,9 +5,10 @@ Working app for Linux using Python + pywebview + SQLite + `rclone`.
 ## What it does
 - desktop UI (HTML/CSS/JS via pywebview)
 - create/edit/delete sync jobs
-- `copy`, `sync`, and `bisync` modes
+- bidirectional sync (`rclone bisync`) — the only mode, by design
+- first run auto-initializes the baseline with a non-destructive merge (`--resync`)
+- delete-protection on every run (`--max-delete`) and conflict resolution that never overwrites data
 - `dry-run` and command preview before executing
-- baseline initialization for `bisync`
 - run history and per-run logs
 - optional agent to run syncs on an interval (with lockfile)
 - import jobs from JSON
@@ -79,12 +80,13 @@ journalctl --user -u drive-sync-desktop-agent.service -f
 ```bash
 drive-sync-desktop-agent --once 1                # run job 1
 drive-sync-desktop-agent --once 1 --dry-run      # dry-run job 1
-drive-sync-desktop-agent --once 1 --resync       # initialize bisync baseline
+drive-sync-desktop-agent --once 1 --resync       # re-initialize the baseline (merges both sides)
 ```
 
 ## Environment configuration
 - `RCLONE_PATH`: path to the `rclone` binary (default: search in `PATH`)
 - `RCLONE_TIMEOUT_SECONDS`: timeout per run (default: `21600` = 6h)
+- `DRIVE_SYNC_MAX_DELETE`: max percentage of files a run may delete before aborting (default: `50`)
 - `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_RUNTIME_DIR`: XDG standard
 
 ## Package

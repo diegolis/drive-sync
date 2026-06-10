@@ -50,7 +50,7 @@ $1
 }
 
 bridge() {
-  XDG_DATA_HOME="$BASE/data" XDG_CONFIG_HOME="$BASE/config" "$PY" -c "
+  XDG_DATA_HOME="$BASE/data" XDG_CONFIG_HOME="$BASE/config" XDG_RUNTIME_DIR="$BASE/runtime" "$PY" -c "
 import sys, json
 sys.path.insert(0, '$APP_PATH')
 from drive_sync_desktop.bridge import Bridge
@@ -78,128 +78,100 @@ local_lacks(){ ! test -e "$BASE/local/$1"; }
 cloud_eq()   { test "$(rclone cat "${REMOTE}:${DD}/$1/$2")" = "$3"; }
 local_eq()   { test "$(cat "$BASE/local/$1")" = "$2"; }
 
-set_mode_field() {
-  py_db "
-c.execute(\"UPDATE jobs SET $2 WHERE id = $1\")
-c.commit()
-"
-}
-
 # ===== SETUP =====
 echo "==> Setup workspace en $BASE"
 echo "==> Drive dir: ${REMOTE}:${DD}"
 
 cat > "$BASE/jobs.json" <<EOF
 {"jobs":[
-  {"name":"copy","localPath":"$BASE/local","remote":"$REMOTE","remotePath":"$DD/copy","mode":"copy","dryRunRequired":false},
-  {"name":"sync","localPath":"$BASE/local","remote":"$REMOTE","remotePath":"$DD/sync","mode":"sync","dryRunRequired":false},
-  {"name":"bisync","localPath":"$BASE/local","remote":"$REMOTE","remotePath":"$DD/bisync","mode":"bisync","dryRunRequired":false}
+  {"name":"bisync","localPath":"$BASE/local","remote":"$REMOTE","remotePath":"$DD/bisync"}
 ]}
 EOF
 
 run_app --import-config "$BASE/jobs.json" >/dev/null
-read COPY_ID SYNC_ID BISYNC_ID < <(py_db '
-ids = []
-for n in ["copy", "sync", "bisync"]:
-    ids.append(c.execute("SELECT id FROM jobs WHERE name=?", (n,)).fetchone()["id"])
-print(*ids)
-')
-echo "    job ids: copy=$COPY_ID  sync=$SYNC_ID  bisync=$BISYNC_ID"
+BISYNC_ID=$(py_db 'print(c.execute("SELECT id FROM jobs WHERE name=?", ("bisync",)).fetchone()["id"])')
+echo "    job id: bisync=$BISYNC_ID"
 
 # ===== STRUCTURAL GUARDS (no requieren rclone) =====
 echo
 echo "==> Guards estructurales"
 
 bridge "
-import json
 try:
-  b.save_job({'name':'dup','local_path':'$BASE/local','remote_name':'$REMOTE','remote_path':'$DD/copy','mode':'copy'})
+  b.save_job({'name':'dup','local_path':'$BASE/local','remote_name':'$REMOTE','remote_path':'$DD/bisync'})
   print('NORAISE')
 except ValueError as e:
-  print('RAISED' if 'otra sync' in str(e) else f'WRONG:{e}')
+  print('RAISED' if 'Another sync' in str(e) else f'WRONG:{e}')
 " | tee "$BASE/guard-dup.log" >/dev/null
 assert "guard duplicate target rechaza job con misma combinación local↔drive" grep -q RAISED "$BASE/guard-dup.log"
 
+# Nota: este guard aplica a remotes personales (Mi Drive). Si REMOTE es una
+# Shared Drive, la raíz es un destino válido y este test no corresponde.
 bridge "
-res = b.run($BISYNC_ID, dry_run=False, resync=False)
-print('NEEDS_RESYNC' if res.get('needs_resync') else f'WRONG:{res}')
-" | tee "$BASE/guard-bi.log" >/dev/null
-assert "guard bisync sin baseline → needs_resync" grep -q NEEDS_RESYNC "$BASE/guard-bi.log"
+try:
+  b.save_job({'name':'root','local_path':'$BASE/local','remote_name':'$REMOTE','remote_path':''})
+  print('NORAISE')
+except ValueError as e:
+  print('RAISED' if 'folder in Drive' in str(e) else f'WRONG:{e}')
+" | tee "$BASE/guard-root.log" >/dev/null
+assert "guard remote_path vacío (raíz de Mi Drive) rechazado" grep -q RAISED "$BASE/guard-root.log"
 
-# ===== MODO COPY =====
+py_db "
+mode = c.execute('SELECT mode FROM jobs WHERE id = $BISYNC_ID').fetchone()['mode']
+print(mode)
+assert mode == 'bisync'
+" >/dev/null 2>&1 && PASS=$((PASS+1)) && printf "  \033[32m✓\033[0m %s\n" "todo job queda en modo bisync" \
+  || { FAIL=$((FAIL+1)); FAILED_NAMES+=("todo job queda en modo bisync"); printf "  \033[31m✗\033[0m todo job queda en modo bisync\n"; }
+
+# ===== PRIMERA SYNC = MERGE NO DESTRUCTIVO =====
 echo
-echo "==> Modo copy"
-echo "alpha v1" > "$BASE/local/alpha.txt"
-run_agent --once "$COPY_ID" >/dev/null
-assert "copy: nuevo en local sube a cloud" cloud_has copy alpha.txt
-assert "copy: contenido coincide en cloud" cloud_eq copy alpha.txt "alpha v1"
-
-echo "alpha v2" > "$BASE/local/alpha.txt"
-run_agent --once "$COPY_ID" >/dev/null
-assert "copy: modificación local actualiza cloud" cloud_eq copy alpha.txt "alpha v2"
-
-echo "cloud-only" | rclone rcat "${REMOTE}:${DD}/copy/cloud-only.txt"
-run_agent --once "$COPY_ID" >/dev/null
-assert "copy: archivo creado en cloud no baja al local" local_lacks cloud-only.txt
-assert "copy: archivo creado en cloud sigue en cloud" cloud_has copy cloud-only.txt
-
-rm "$BASE/local/alpha.txt"
-run_agent --once "$COPY_ID" >/dev/null
-assert "copy: borrado local NO borra cloud" cloud_has copy alpha.txt
-
-# Limpiar local antes del próximo grupo
-rm -rf "$BASE/local"; mkdir -p "$BASE/local"
-
-# ===== MODO SYNC =====
-echo
-echo "==> Modo sync (espejo)"
-echo "x v1" > "$BASE/local/x.txt"
-run_agent --once "$SYNC_ID" >/dev/null
-assert "sync: nuevo en local sube a cloud" cloud_has sync x.txt
-
-echo "y" | rclone rcat "${REMOTE}:${DD}/sync/y.txt"
-run_agent --once "$SYNC_ID" >/dev/null
-assert "sync: archivo cloud-only se BORRA en cloud (espejo)" cloud_lacks sync y.txt
-assert "sync: archivo local sigue en cloud" cloud_has sync x.txt
-
-rm "$BASE/local/x.txt"
-run_agent --once "$SYNC_ID" >/dev/null
-assert "sync: borrado local borra cloud" cloud_lacks sync x.txt
-
-rm -rf "$BASE/local"; mkdir -p "$BASE/local"
-
-# ===== MODO BISYNC =====
-echo
-echo "==> Modo bisync"
+echo "==> Primera sync (merge automático, sin borrados)"
 echo "loc v1" > "$BASE/local/loc.txt"
 echo "cloud v1" | rclone rcat "${REMOTE}:${DD}/bisync/cloud.txt"
-run_agent --once "$BISYNC_ID" --resync >/dev/null
-assert "bisync: resync inicial baja archivo cloud-only" local_has cloud.txt
-assert "bisync: resync inicial sube archivo local-only" cloud_has bisync loc.txt
 
+bridge "
+res = b.run($BISYNC_ID, dry_run=False, resync=False)
+print('AUTOMERGE' if res.get('resync') and res.get('ok') else f'WRONG:{res}')
+" | tee "$BASE/first-sync.log" >/dev/null
+assert "primera corrida se auto-promueve a merge (resync)" grep -q AUTOMERGE "$BASE/first-sync.log"
+assert "merge inicial baja archivo cloud-only (no lo borra)" local_has cloud.txt
+assert "merge inicial sube archivo local-only (no lo borra)" cloud_has bisync loc.txt
+
+# ===== BISYNC NORMAL =====
+echo
+echo "==> Sincronización bidireccional"
 echo "nuevo local" > "$BASE/local/new-local.txt"
 run_agent --once "$BISYNC_ID" >/dev/null
-assert "bisync: nuevo local sube" cloud_has bisync new-local.txt
+assert "nuevo local sube" cloud_has bisync new-local.txt
 
 echo "nuevo cloud" | rclone rcat "${REMOTE}:${DD}/bisync/new-cloud.txt"
 run_agent --once "$BISYNC_ID" >/dev/null
-assert "bisync: nuevo cloud baja" local_has new-cloud.txt
+assert "nuevo cloud baja" local_has new-cloud.txt
 
 echo "loc v2" > "$BASE/local/loc.txt"
 run_agent --once "$BISYNC_ID" >/dev/null
-assert "bisync: modificación local sube" cloud_eq bisync loc.txt "loc v2"
+assert "modificación local sube" cloud_eq bisync loc.txt "loc v2"
 
 echo "cloud v2" | rclone rcat "${REMOTE}:${DD}/bisync/cloud.txt"
 run_agent --once "$BISYNC_ID" >/dev/null
-assert "bisync: modificación cloud baja" local_eq cloud.txt "cloud v2"
+assert "modificación cloud baja" local_eq cloud.txt "cloud v2"
 
 rm "$BASE/local/new-local.txt"
 run_agent --once "$BISYNC_ID" >/dev/null
-assert "bisync: borrado local borra cloud" cloud_lacks bisync new-local.txt
+assert "borrado local borra cloud" cloud_lacks bisync new-local.txt
 
 rclone deletefile "${REMOTE}:${DD}/bisync/new-cloud.txt"
 run_agent --once "$BISYNC_ID" >/dev/null
-assert "bisync: borrado cloud borra local" local_lacks new-cloud.txt
+assert "borrado cloud borra local" local_lacks new-cloud.txt
+
+# ===== FRENO --max-delete =====
+echo
+echo "==> Freno de seguridad: vaciar el local NO vacía el Drive"
+run_agent --once "$BISYNC_ID" >/dev/null   # estado estable antes del desastre simulado
+rm -rf "$BASE/local"; mkdir -p "$BASE/local"   # simula disco desmontado / carpeta vaciada
+run_agent --once "$BISYNC_ID" >/dev/null
+assert "cloud conserva loc.txt tras vaciar local" cloud_has bisync loc.txt
+assert "cloud conserva cloud.txt tras vaciar local" cloud_has bisync cloud.txt
 
 # ===== REPORTE =====
 echo

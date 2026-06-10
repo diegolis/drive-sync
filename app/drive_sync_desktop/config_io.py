@@ -55,6 +55,7 @@ def _payload_from_json(entry: dict, index: int) -> dict:
     name = _require_str(entry, "name", index)
     local_path = _require_str(entry, "localPath", index)
     remote = _require_str(entry, "remote", index)
+    remote_path = _require_str(entry, "remotePath", index)
     excludes = entry.get("exclude", [])
     if not isinstance(excludes, list):
         raise ConfigImportError(f"jobs[{index}].exclude must be a list of strings")
@@ -62,11 +63,9 @@ def _payload_from_json(entry: dict, index: int) -> dict:
         "name": name,
         "local_path": local_path,
         "remote_name": remote,
-        "remote_path": str(entry.get("remotePath", "")),
-        "mode": entry.get("mode", "copy"),
+        "remote_path": remote_path,
         "interval_minutes": int(entry.get("scheduleMinutes", 15)),
         "auto_sync": bool(entry.get("autoSync", False)),
-        "dry_run_required": bool(entry.get("dryRunRequired", True)),
         "excludes": "\n".join(str(x) for x in excludes),
     }
 

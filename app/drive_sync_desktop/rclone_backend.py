@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import shlex
 import shutil
 import subprocess
@@ -13,6 +14,9 @@ from typing import Sequence
 from .common import DEFAULT_RCLONE_PATH, log_dir
 
 DEFAULT_TIMEOUT_SECONDS = int(os.environ.get("RCLONE_TIMEOUT_SECONDS", "21600"))
+# Abort the sync if it would delete more than this percentage of files on
+# either side. Protects against an unmounted/emptied folder wiping the other.
+MAX_DELETE_PERCENT = int(os.environ.get("DRIVE_SYNC_MAX_DELETE", "50"))
 
 
 class RcloneError(RuntimeError):
@@ -64,7 +68,7 @@ def list_remotes_detailed(path: str = DEFAULT_RCLONE_PATH) -> list[dict]:
         data = json.loads(cp.stdout or "{}")
     except json.JSONDecodeError:
         return []
-    return _classify_remotes(data)
+    return _classify_remotes(data, path)
 
 
 def list_remote_folders(remote_name: str, path: str = "", rclone_path: str = DEFAULT_RCLONE_PATH) -> list[str]:
@@ -87,18 +91,40 @@ def make_remote_folder(remote_name: str, path: str, rclone_path: str = DEFAULT_R
         raise RcloneError(cp.stderr.strip() or "Could not create folder")
 
 
-def _classify_remotes(data: dict) -> list[dict]:
+def _classify_remotes(data: dict, path: str = DEFAULT_RCLONE_PATH) -> list[dict]:
     out = []
     for name, info in data.items():
         if info.get("type") != "drive":
             continue
         team = (info.get("team_drive") or "").strip()
+        if team:
+            label = _shared_drive_name(name, team, path) or "Shared Drive"
+        else:
+            label = "My Drive"
         out.append({
             "name": name,
             "kind": "shared" if team else "personal",
-            "label": "Shared Drive" if team else "Mi Drive",
+            "label": label,
         })
     return out
+
+
+def _shared_drive_name(remote_name: str, team_id: str, path: str) -> str | None:
+    """Resolve the human name of the Shared Drive a remote points to."""
+    try:
+        exe = detect_rclone(path)
+        cp = subprocess.run(
+            [exe, "backend", "drives", f"{remote_name}:"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if cp.returncode != 0:
+            return None
+        for drive in json.loads(cp.stdout or "[]"):
+            if drive.get("id") == team_id:
+                return (drive.get("name") or "").strip() or None
+    except (RcloneError, OSError, subprocess.SubprocessError, json.JSONDecodeError, ValueError):
+        return None
+    return None
 
 
 def _exclude_args(excludes: str | None) -> list[str]:
@@ -176,14 +202,19 @@ def _build_command(
 ) -> list[str]:
     exe = detect_rclone(path)
     target = f"{job['remote_name']}:{job['remote_path'].lstrip('/')}"
-    command = [exe, job["mode"], job["local_path"], target, "-v", "--stats=1s"]
+    command = [
+        exe, "bisync", job["local_path"], target,
+        "-v", "--stats=1s", f"--max-delete={MAX_DELETE_PERCENT}",
+    ]
     if dry_run:
         command.append("--dry-run")
-    if job["mode"] == "bisync":
-        if resync:
-            command.append("--resync")
-        else:
-            command.extend(["--resilient", "--recover"])
+    if resync:
+        # Baseline init: merges both sides, never deletes anything.
+        command.append("--resync")
+    else:
+        # On conflict the newer file wins; the older copy is kept renamed,
+        # so neither side can silently overwrite data.
+        command.extend(["--resilient", "--recover", "--conflict-resolve", "newer"])
     command.extend(_exclude_args(job.get("excludes")))
     return command
 
@@ -225,11 +256,14 @@ def _combined(stdout: str, stderr: str) -> str:
 
 _NOISE = ("bisync is experimental",)
 _INFO_KEYWORDS = ("copied", "transferred", "deleted", "renamed", "checks:", "must run", "timeout")
+# Word-bounded so the stats line "Errors: 0" or filenames like error_log.txt
+# don't get flagged as errors.
+_ERROR_RE = re.compile(r"(?i)\berror\b\s*:|\baborted\b|\bcritical\b|safety abort|must run --resync")
 
 
 def summarize(result: CommandResult) -> str:
     lines = _meaningful_lines((result.stdout or "") + "\n" + (result.stderr or ""))
-    errors = [l for l in lines if "error" in l.lower() or "aborted" in l.lower()]
+    errors = [l for l in lines if _ERROR_RE.search(l)]
     info = [l for l in lines if any(k in l.lower() for k in _INFO_KEYWORDS)]
     interesting = errors + info or lines[-8:]
     return "\n".join(interesting[:20]) or ("OK" if result.ok else "Failed with no usable output")
@@ -253,10 +287,9 @@ def run_job(
     resync: bool = False,
     path: str = DEFAULT_RCLONE_PATH,
 ) -> CommandResult:
-    if job["mode"] == "bisync":
-        clear_stale_bisync_locks(path)
-        if resync:
-            _ensure_remote_dir(_remote_target(job), path)
+    clear_stale_bisync_locks(path)
+    if resync:
+        _ensure_remote_dir(_remote_target(job), path)
     command = _build_command(job, dry_run=dry_run, resync=resync, path=path)
     label = f"job-{job.get('id', 'adhoc')}-{'dry' if dry_run else 'sync'}"
     return _run(command, label)

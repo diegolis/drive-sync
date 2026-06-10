@@ -10,6 +10,7 @@ def _write(path: Path, jobs: list[dict]) -> Path:
 
 
 def _entry(name: str = "docs") -> dict:
+    # Includes legacy keys (mode, dryRunRequired) to prove they are ignored.
     return {
         "name": name,
         "localPath": "/tmp/docs",
@@ -31,7 +32,19 @@ def test_import_creates_job(tmp_path):
     assert job["name"] == "docs"
     assert job["interval_minutes"] == 20
     assert job["auto_sync"] == 1
+    assert job["mode"] == "bisync"
     assert "*.tmp" in job["excludes"]
+
+
+def test_import_requires_remote_path(tmp_path):
+    entry = _entry()
+    del entry["remotePath"]
+    file = _write(tmp_path / "cfg.json", [entry])
+    try:
+        config_io.import_config(str(file))
+        assert False, "should have raised"
+    except config_io.ConfigImportError as exc:
+        assert "remotePath" in str(exc)
 
 
 def test_import_is_idempotent_by_name(tmp_path):

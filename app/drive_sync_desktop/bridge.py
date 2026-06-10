@@ -9,10 +9,6 @@ from .agent import run_one
 from .common import ensure_dirs
 from .onboarding import add_drive_remote, list_shared_drives, set_shared_drive
 from .rclone_backend import list_remote_folders, list_remotes, list_remotes_detailed, make_remote_folder
-
-
-def _log_swallowed(where: str, exc: BaseException) -> None:
-    print(f"[bridge:{where}] {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
 from .storage import (
     delete_job,
     find_duplicate_target,
@@ -27,6 +23,10 @@ from .storage import (
 FolderPicker = Callable[[], str]
 
 
+def _log_swallowed(where: str, exc: BaseException) -> None:
+    print(f"[bridge:{where}] {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+
+
 class Bridge:
     def __init__(self, folder_picker: FolderPicker | None = None) -> None:
         ensure_dirs()
@@ -39,7 +39,7 @@ class Bridge:
     def list_jobs(self) -> list[dict[str, Any]]:
         jobs = list_jobs()
         for job in jobs:
-            job["needs_baseline"] = job["mode"] == "bisync" and not has_baseline_run(int(job["id"]))
+            job["needs_baseline"] = not has_baseline_run(int(job["id"]))
         return jobs
 
     def get_job(self, job_id: int) -> dict[str, Any] | None:
@@ -86,14 +86,14 @@ class Bridge:
 
     def run(self, job_id: int, dry_run: bool = False, resync: bool = False) -> dict[str, Any]:
         job = get_job(int(job_id))
-        if job and job["mode"] == "bisync" and not dry_run and not resync and not has_baseline_run(int(job_id)):
-            return {
-                "ok": False,
-                "summary": "This bidirectional sync needs a baseline. Click 'Initialize bisync'.",
-                "needs_resync": True,
-            }
+        if not job:
+            return {"ok": False, "summary": "Job does not exist"}
+        if not resync and not has_baseline_run(int(job_id)):
+            # First run: initialize the baseline with a non-destructive merge
+            # of both sides instead of failing.
+            resync = True
         ok, summary = run_one(int(job_id), dry_run=bool(dry_run), resync=bool(resync))
-        return {"ok": ok, "summary": summary}
+        return {"ok": ok, "summary": summary, "resync": bool(resync)}
 
     def connect_drive(self, name: str | None = None) -> dict[str, Any]:
         final_name = (name or "").strip() or _generate_remote_name()
@@ -132,11 +132,9 @@ def _normalize_payload(p: dict[str, Any]) -> dict[str, Any]:
         "name": (p.get("name") or "").strip() or _default_name(local),
         "local_path": local,
         "remote_name": (p.get("remote_name") or "").strip(),
-        "remote_path": (p.get("remote_path") or "").strip(),
-        "mode": p.get("mode") or "copy",
+        "remote_path": (p.get("remote_path") or "").strip().strip("/"),
         "interval_minutes": int(p.get("interval_minutes") or 15),
         "auto_sync": bool(p.get("auto_sync")),
-        "dry_run_required": bool(p.get("dry_run_required", True)),
         "excludes": p.get("excludes") or "",
     }
 
@@ -165,9 +163,23 @@ def _validate_payload(payload: dict[str, Any]) -> dict[str, Any]:
     missing = [k for k in ("name", "local_path", "remote_name") if not payload.get(k)]
     if missing:
         raise ValueError(f"Missing fields: {', '.join(missing)}")
-    if payload["mode"] not in {"copy", "sync", "bisync"}:
-        raise ValueError("Invalid mode")
+    if not payload.get("remote_path") and not _remote_is_shared_drive(payload["remote_name"]):
+        # A Shared Drive root is itself a project folder, so it's a valid
+        # target; the root of My Drive (everything the account owns) is not.
+        raise ValueError(
+            "Pick a folder in Drive for this sync. Syncing against the entire "
+            "My Drive root is not allowed."
+        )
     return payload
+
+
+def _remote_is_shared_drive(remote_name: str) -> bool:
+    try:
+        remotes = list_remotes_detailed()
+    except Exception as exc:
+        _log_swallowed("remote_is_shared_drive", exc)
+        return False
+    return any(r.get("name") == remote_name and r.get("kind") == "shared" for r in remotes)
 
 
 def _safe_list_shared(name: str) -> list[dict[str, str]]:

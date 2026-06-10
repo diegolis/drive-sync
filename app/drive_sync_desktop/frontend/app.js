@@ -1,11 +1,5 @@
 "use strict";
 
-const MODE_LABEL = {
-  copy: "Backup",
-  sync: "Mirror",
-  bisync: "Sync",
-};
-const MODE_ARROW = { copy: "↑", sync: "⇒", bisync: "⇄" };
 const POLL_INTERVAL_MS = 10000;
 
 const state = {
@@ -185,17 +179,13 @@ function renderJobCard(job) {
   const node = els.cardTpl.content.firstElementChild.cloneNode(true);
   node.dataset.id = job.id;
   $(".job-name", node).textContent = job.name;
-  $(".job-arrow", node).textContent = MODE_ARROW[job.mode] || "→";
+  $(".job-arrow", node).textContent = "⇄";
   $(".job-dest", node).textContent = describeTarget(job);
   $(".job-status", node).className = "job-status " + jobStatusClass(job);
   $(".job-status", node).textContent = jobStatusText(job);
   const syncBtn = $(".action-sync", node);
-  if (job.needs_baseline) {
-    syncBtn.textContent = "Initialize";
-    syncBtn.addEventListener("click", () => runJob(job, false, true));
-  } else {
-    syncBtn.addEventListener("click", () => runJob(job, false, false));
-  }
+  if (job.needs_baseline) syncBtn.textContent = "First sync";
+  syncBtn.addEventListener("click", () => runJob(job, false, false));
   $(".action-dry", node).addEventListener("click", () => runJob(job, true, false));
   $(".action-more", node).addEventListener("click", () => openDetailModal(job));
   return node;
@@ -204,7 +194,7 @@ function renderJobCard(job) {
 function describeTarget(job) {
   const remote = state.remotesDetailed.find((r) => r.name === job.remote_name);
   const accountLabel = remote ? remote.label : job.remote_name;
-  return `${accountLabel} · ${job.remote_path}`;
+  return `${accountLabel} · ${job.remote_path || "(root)"}`;
 }
 
 function jobStatusClass(job) {
@@ -217,7 +207,7 @@ function jobStatusClass(job) {
 
 function jobStatusText(job) {
   if (job._running) return "Running…";
-  if (job.needs_baseline) return "Needs baseline";
+  if (job.needs_baseline) return "First sync pending";
   if (!job.last_status) return "No runs yet";
   const verb = job.last_status === "ok" ? "OK" : "Error";
   return `${verb} · ${formatTime(job.last_run_at)}`;
@@ -247,18 +237,13 @@ function openJobModal(job = null) {
   $("#job-modal-title").textContent = job ? `Edit ${job.name}` : "New sync";
   els.jobForm.reset();
   els.jobForm.dataset.id = job ? job.id : "";
-  els.jobForm.elements.mode.value = "copy";
   if (job) {
     els.jobForm.elements.name.value = job.name;
     els.jobForm.elements.local_path.value = job.local_path;
     els.jobForm.elements.remote_name.value = job.remote_name;
     els.jobForm.elements.remote_path.value = job.remote_path;
-    Array.from(els.jobForm.elements.mode).forEach((r) => (r.checked = r.value === job.mode));
     els.jobForm.elements.interval_minutes.value = job.interval_minutes;
     els.jobForm.elements.auto_sync.checked = !!job.auto_sync;
-    if (els.jobForm.elements.dry_run_required) {
-      els.jobForm.elements.dry_run_required.checked = job.dry_run_required !== 0;
-    }
     els.jobForm.elements.excludes.value = job.excludes || "";
   }
   els.jobModal.showModal();
@@ -375,59 +360,47 @@ async function handleSaveJob(e) {
     els.jobModal.close();
     showToast(data.id ? "Changes saved" : "Sync created", "ok");
     await refreshJobs();
-    await autoInitIfNeeded(newId, data);
+    await autoInitIfNeeded(newId);
   } catch (err) {
     showToast(toMessage(err), "error");
   }
 }
 
-async function autoInitIfNeeded(jobId, data) {
-  if (data.mode !== "bisync") return;
+async function autoInitIfNeeded(jobId) {
   await refreshJobs();
   const job = state.jobs.find((j) => j.id === jobId);
   if (!job || !job.needs_baseline) return;
-  showToast("Initializing bidirectional sync…", "info");
-  await runJob(job, false, true, { auto: true });
+  showToast("Running first sync (merging both folders)…", "info");
+  await runJob(job, false, false);
 }
 
 function formToJobPayload(form) {
-  const dryReq = form.elements.dry_run_required;
   return {
     id: form.dataset.id ? Number(form.dataset.id) : null,
     name: form.elements.name.value,
     local_path: form.elements.local_path.value,
     remote_name: form.elements.remote_name.value,
     remote_path: form.elements.remote_path.value,
-    mode: form.elements.mode.value,
     interval_minutes: Number(form.elements.interval_minutes.value || 15),
     auto_sync: form.elements.auto_sync.checked,
-    dry_run_required: dryReq ? dryReq.checked : true,
     excludes: form.elements.excludes.value,
   };
 }
 
-async function runJob(job, dryRun, resync, opts = {}) {
-  const auto = !!opts.auto;
-  if (!auto && !dryRun && !resync && job.mode === "sync") {
-    if (!confirm(`"${job.name}" is in Mirror mode and may delete files on Drive. Continue?`)) return;
-  }
+async function runJob(job, dryRun, resync) {
   setJobRunning(job.id, true);
-  const label = dryRun ? "Dry run in progress…" : resync ? "Initializing…" : "Syncing…";
+  const firstSync = job.needs_baseline;
+  const label = dryRun ? "Dry run in progress…"
+    : resync || firstSync ? "Merging both folders…"
+    : "Syncing…";
   showToast(label, "info");
   try {
     const result = await api().run(job.id, dryRun, resync);
-    if (result.needs_resync && !auto) {
-      const job2 = state.jobs.find((j) => j.id === job.id);
-      if (job2) await runJob(job2, false, true, { auto: true });
-      return;
-    }
-    if (result.needs_resync && auto) {
-      showToast(result.summary, "warn");
-    } else {
-      const okLabel = dryRun ? "Dry run OK" : resync ? "Initialized" : "Sync OK";
-      const text = result.ok ? okLabel : `Error: ${truncate(result.summary, 200)}`;
-      showToast(text, result.ok ? "ok" : "error");
-    }
+    const okLabel = dryRun ? "Dry run OK"
+      : result.resync ? "Folders merged"
+      : "Sync OK";
+    const text = result.ok ? okLabel : `Error: ${truncate(result.summary, 200)}`;
+    showToast(text, result.ok ? "ok" : "error");
   } catch (err) {
     showToast(toMessage(err), "error");
   } finally {
@@ -451,8 +424,7 @@ function setJobRunning(jobId, running) {
 async function openDetailModal(job) {
   els.detailModal.dataset.id = job.id;
   $("#detail-name").textContent = job.name;
-  $("#detail-subtitle").textContent = `${job.local_path} ${MODE_ARROW[job.mode]} ${describeTarget(job)}`;
-  els.detailResyncBtn.hidden = job.mode !== "bisync";
+  $("#detail-subtitle").textContent = `${job.local_path} ⇄ ${describeTarget(job)}`;
   await renderRuns(job.id);
   renderConfig(job);
   els.detailModal.showModal();
@@ -482,8 +454,7 @@ function renderConfig(job) {
   const rows = [
     ["Local folder", job.local_path],
     ["Account", accountLabel],
-    ["Destination", job.remote_path],
-    ["Mode", MODE_LABEL[job.mode]],
+    ["Destination", job.remote_path || "(root)"],
     ["Auto", job.auto_sync ? `every ${job.interval_minutes} min` : "no"],
     ["Excludes", job.excludes ? job.excludes.split("\n").join(", ") : "—"],
   ];

@@ -137,7 +137,7 @@ def current_state() -> str:
 def _classify_jobs(jobs: list[dict]) -> str:
     if any(j.get("last_status") == "error" for j in jobs):
         return "error"
-    if any(j.get("mode") == "bisync" for j in jobs) and any(j.get("last_status") is None for j in jobs):
+    if any(j.get("last_status") is None for j in jobs):
         return "warn"
     return "ok"
 

@@ -9,10 +9,8 @@ def _sample_job(name: str = "docs") -> dict:
         "local_path": "/tmp/x",
         "remote_name": "gdrive",
         "remote_path": "Backups/Docs",
-        "mode": "copy",
         "interval_minutes": 10,
         "auto_sync": True,
-        "dry_run_required": True,
         "excludes": "*.tmp\nnode_modules/**",
     }
 
@@ -23,9 +21,25 @@ def test_upsert_get_list_delete():
     fetched = storage.get_job(job_id)
     assert fetched["name"] == "docs"
     assert fetched["auto_sync"] == 1
+    assert fetched["mode"] == "bisync"
     assert storage.list_jobs()[0]["id"] == job_id
     storage.delete_job(job_id)
     assert storage.get_job(job_id) is None
+
+
+def test_upsert_forces_bisync_even_with_legacy_mode():
+    storage.init_db()
+    job_id = storage.upsert_job(_sample_job("legacy") | {"mode": "sync"})
+    assert storage.get_job(job_id)["mode"] == "bisync"
+
+
+def test_migration_converts_legacy_modes_to_bisync():
+    storage.init_db()
+    job_id = storage.upsert_job(_sample_job("old"))
+    with storage.db() as conn:
+        conn.execute("UPDATE jobs SET mode = 'copy' WHERE id = ?", (job_id,))
+    storage.init_db()
+    assert storage.get_job(job_id)["mode"] == "bisync"
 
 
 def test_find_job_by_name():

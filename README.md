@@ -44,7 +44,12 @@ Don't reinvent the sync engine. The app orchestrates, validates, persists state,
 - [`config/example.sync.json`](./config/example.sync.json): example config (importable via `--import-config`)
 
 ## Important decision
-Bidirectional sync (`bisync`) is supported, but the baseline must be initialized explicitly from the UI or with `--resync`. It is never enabled silently.
+Every sync is bidirectional (`rclone bisync`): changes on either side are mirrored to the other. Safety comes first:
+
+- The **first run** of a job initializes the baseline with `--resync`, which **merges** both folders without deleting anything — syncing against a Drive folder that already has files is safe.
+- Every run carries `--max-delete` (default 50%, override with `DRIVE_SYNC_MAX_DELETE`), so an unmounted disk or an accidentally emptied folder can never wipe the other side.
+- Conflicts resolve to the **newer** file; the older copy is kept renamed, never silently overwritten.
+- Syncing against the root of **My Drive** is not allowed — each job targets a specific folder. The root of a **Shared Drive** is allowed, since a Shared Drive is itself a scoped project space.
 
 ## Install
 

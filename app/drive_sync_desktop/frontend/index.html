@@ -96,48 +96,20 @@
             <div class="field">
               <label for="job-remote-path">Folder in Drive</label>
               <div class="input-row">
-                <input id="job-remote-path" name="remote_path" placeholder="(root)">
+                <input id="job-remote-path" name="remote_path" placeholder="Backups/Documents — empty allowed only for Shared Drives">
                 <button type="button" class="btn btn-secondary" data-action="pick-remote">Browse…</button>
               </div>
             </div>
           </div>
-          <div class="field">
-            <label>Mode</label>
-            <div class="mode-grid">
-              <label class="mode-card">
-                <input type="radio" name="mode" value="copy" checked>
-                <span class="mode-icon">↑</span>
-                <strong>Backup</strong>
-                <p>Upload to Drive. Never delete.</p>
-              </label>
-              <label class="mode-card">
-                <input type="radio" name="mode" value="bisync">
-                <span class="mode-icon">⇄</span>
-                <strong>Sync</strong>
-                <p>Changes on either side are reflected.</p>
-              </label>
-              <label class="mode-card subtle">
-                <input type="radio" name="mode" value="sync">
-                <span class="mode-icon">⇒</span>
-                <strong>Mirror <span class="badge">advanced</span></strong>
-                <p>Drive mirrors exactly. Deletes if you delete locally.</p>
-              </label>
-            </div>
-          </div>
-          <details class="advanced">
-            <summary>Advanced options</summary>
+          <p class="muted">Two-way sync (⇄): changes on either side are mirrored to the other.
+            The first sync merges both folders — nothing is ever deleted on the first run.</p>
+          <div class="advanced">
             <div class="field checkbox-row">
               <label class="checkbox">
-                <input type="checkbox" id="job-auto" name="auto_sync">
+                <input type="checkbox" id="job-auto" name="auto_sync" checked>
                 <span>Sync automatically every</span>
                 <input type="number" id="job-interval" name="interval_minutes" value="15" min="1" class="inline-number">
                 <span>min</span>
-              </label>
-            </div>
-            <div class="field checkbox-row">
-              <label class="checkbox">
-                <input type="checkbox" id="job-dry-required" name="dry_run_required" checked>
-                <span>Require a dry-run confirmation before destructive runs</span>
               </label>
             </div>
             <div class="field">
@@ -148,7 +120,7 @@
               <label for="job-excludes">Exclude patterns (one per line)</label>
               <textarea id="job-excludes" name="excludes" rows="3" placeholder="*.tmp&#10;node_modules/**"></textarea>
             </div>
-          </details>
+          </div>
         </div>
         <footer class="modal-footer">
           <button type="button" class="btn btn-ghost" data-action="close-job">Cancel</button>
@@ -168,7 +140,7 @@
       <div class="detail-actions">
         <button class="btn btn-secondary" data-action="detail-dry">Dry run</button>
         <button class="btn btn-primary" data-action="detail-sync">Sync now</button>
-        <button class="btn btn-secondary" id="detail-resync-btn" hidden data-action="detail-resync">Initialize bisync</button>
+        <button class="btn btn-secondary" id="detail-resync-btn" data-action="detail-resync" title="Merges both sides again without deleting anything">Re-initialize (merge)</button>
       </div>
       <h3 class="section-title">Recent activity</h3>
       <div id="detail-runs" class="run-list"></div>

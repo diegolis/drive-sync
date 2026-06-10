@@ -14,11 +14,10 @@ CREATE TABLE IF NOT EXISTS jobs (
   local_path TEXT NOT NULL,
   remote_name TEXT NOT NULL,
   remote_path TEXT NOT NULL,
-  mode TEXT NOT NULL DEFAULT 'copy',
+  mode TEXT NOT NULL DEFAULT 'bisync',
   interval_minutes INTEGER NOT NULL DEFAULT 15,
   auto_sync INTEGER NOT NULL DEFAULT 0,
   excludes TEXT NOT NULL DEFAULT '',
-  dry_run_required INTEGER NOT NULL DEFAULT 1,
   last_run_at TEXT,
   last_status TEXT,
   last_summary TEXT,
@@ -67,6 +66,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(jobs)").fetchall()}
     if "last_auto_resync_at" not in cols:
         conn.execute("ALTER TABLE jobs ADD COLUMN last_auto_resync_at TEXT")
+    # Bidirectional sync is the only mode now. Old 'copy'/'sync' jobs become
+    # bisync jobs without a baseline; their first run is a non-destructive merge.
+    conn.execute("UPDATE jobs SET mode = 'bisync' WHERE mode != 'bisync'")
 
 
 def parse_sqlite_ts(value: str | None) -> datetime | None:
@@ -123,11 +125,10 @@ def upsert_job(job: dict[str, Any]) -> int:
         job["local_path"],
         job["remote_name"],
         job["remote_path"],
-        job["mode"],
+        "bisync",
         int(job.get("interval_minutes", 15) or 15),
         1 if job.get("auto_sync") else 0,
         job.get("excludes", ""),
-        1 if job.get("dry_run_required", True) else 0,
     )
     with db() as conn:
         if job.get("id"):
@@ -135,7 +136,7 @@ def upsert_job(job: dict[str, Any]) -> int:
                 """
                 UPDATE jobs
                 SET name=?, local_path=?, remote_name=?, remote_path=?, mode=?,
-                    interval_minutes=?, auto_sync=?, excludes=?, dry_run_required=?,
+                    interval_minutes=?, auto_sync=?, excludes=?,
                     updated_at=CURRENT_TIMESTAMP
                 WHERE id=?
                 """,
@@ -144,8 +145,8 @@ def upsert_job(job: dict[str, Any]) -> int:
             return int(job["id"])
         cur = conn.execute(
             """
-            INSERT INTO jobs (name, local_path, remote_name, remote_path, mode, interval_minutes, auto_sync, excludes, dry_run_required)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO jobs (name, local_path, remote_name, remote_path, mode, interval_minutes, auto_sync, excludes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             fields,
         )

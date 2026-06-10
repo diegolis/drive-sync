@@ -92,7 +92,7 @@ def _tick() -> None:
 
 
 def _needs_baseline(job: dict) -> bool:
-    return job["mode"] == "bisync" and not has_baseline_run(int(job["id"]))
+    return not has_baseline_run(int(job["id"]))
 
 
 def _skip_reason(job: dict) -> str | None:
@@ -107,8 +107,6 @@ def _skip_reason(job: dict) -> str | None:
 
 
 def _try_auto_recovery(job: dict) -> bool:
-    if job["mode"] != "bisync":
-        return False
     if not _wants_auto_recovery(job):
         return False
     if not _can_auto_recover(job):

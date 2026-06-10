@@ -41,14 +41,17 @@ Builds and runs `rclone config create <name> drive scope=drive config_is_local=t
 
 ## Sync model
 
-### Modes
-1. **`copy`**: uploads/updates, never deletes from the destination. Safe default.
-2. **`sync`**: mirrors source to destination, can delete. Requires confirmation if `dry_run_required` is set.
-3. **`bisync`**: bidirectional. Requires baseline initialization with `--resync` ("Initialize bisync" button in the UI, or `--resync` on the CLI).
+There is a single mode: **bidirectional** (`rclone bisync`). Changes and deletions propagate both ways, with these guardrails:
+
+- **First run** of a job auto-initializes the baseline with `--resync`, a non-destructive merge of both sides (copies only, no deletes). Both the UI bridge and the agent promote the first run to a resync.
+- **`--max-delete`** (default 50%, env `DRIVE_SYNC_MAX_DELETE`) on every run: if one side lost most of its files (unmounted disk, emptied folder), the run aborts.
+- **`--conflict-resolve newer`**: when both sides changed, the newer file wins and the older copy is kept renamed.
+- `remote_path` is required for My Drive remotes (a job can never target the My Drive root). Shared Drive remotes may target their root, since a Shared Drive is a scoped space.
 
 ### Base command
 ```
-rclone <mode> <local_path> <remote>:<remote_path> -v --stats=1s [--dry-run] [--resync] [--exclude pattern]*
+rclone bisync <local_path> <remote>:<remote_path> -v --stats=1s --max-delete=50 \
+  [--dry-run] [--resync | --resilient --recover --conflict-resolve newer] [--exclude pattern]*
 ```
 
 ## Execution flow
@@ -62,7 +65,7 @@ rclone <mode> <local_path> <remote>:<remote_path> -v --stats=1s [--dry-run] [--r
 
 ### Real sync
 1. lock the job via `fcntl.flock`
-2. if mode is destructive (`sync`/`bisync`) and dry-run is required → explicit confirmation
+2. if the job has no baseline yet → the run is promoted to `--resync` (non-destructive merge)
 3. run `rclone` with a timeout (default 6h, configurable via `RCLONE_TIMEOUT_SECONDS`)
 4. persist `runs` in SQLite and update the `last_*` fields on `jobs`
 5. release the lock by closing the file descriptor
@@ -70,7 +73,9 @@ rclone <mode> <local_path> <remote>:<remote_path> -v --stats=1s [--dry-run] [--r
 ## Operational safety
 
 ### Active guardrails
-- explicit confirmation before `sync` or `bisync` when the job requires it
+- first run is always a merge: nothing is deleted when adopting a folder that already has files
+- `--max-delete` caps deletions per run; a suddenly-empty side aborts the sync
+- conflicts never overwrite data (newer wins, loser kept renamed)
 - per-job lockfile, preventing concurrent runs of the same job
 - subprocess timeout to prevent the loop from hanging
 - timestamps always in UTC (DB and comparisons)
@@ -82,8 +87,8 @@ No conflict detection in the MVP. `bisync` delegates that logic to `rclone`. Roa
 
 ### `jobs`
 - `id`, `name`, `local_path`, `remote_name`, `remote_path`
-- `mode` (`copy` | `sync` | `bisync`)
-- `interval_minutes`, `auto_sync`, `dry_run_required`
+- `mode` (always `bisync`; legacy `copy`/`sync` rows are migrated on startup)
+- `interval_minutes`, `auto_sync`
 - `excludes` (one per line)
 - `last_run_at`, `last_status`, `last_summary`
 - `last_auto_resync_at` (added via in-place migration in `storage._migrate`; tracks when the agent last auto-recovered a bisync baseline)
@@ -107,7 +112,7 @@ $XDG_RUNTIME_DIR/drive-sync-desktop/job-*.lock  # lockfiles
 | Fragile parsing of `rclone` output | Keyword-based heuristic + full log on disk for auditing |
 | Hung subprocess | `subprocess.run(timeout=...)`, configurable |
 | UI + agent concurrency over SQLite | `journal_mode=WAL` and `timeout=10s` on the connection |
-| `bisync` with diverged baselines | Explicit "Initialize bisync" button for `--resync` |
+| `bisync` with diverged baselines | Automatic recovery: the agent re-runs `--resync` (a merge) with a cooldown; the UI offers "Re-initialize (merge)" |
 | Drive API throttling | `rclone` already retries with backoff |
 
 ## Pending (post-MVP)
